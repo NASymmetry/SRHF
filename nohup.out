@@ -1,0 +1,269 @@
+blas_mkl_info:
+    libraries = ['mkl_rt', 'pthread']
+    library_dirs = ['/home/vulcan/nlk36701/.conda/envs/helpme/lib']
+    define_macros = [('SCIPY_MKL_H', None), ('HAVE_CBLAS', None)]
+    include_dirs = ['/home/vulcan/nlk36701/.conda/envs/helpme/include']
+blas_opt_info:
+    libraries = ['mkl_rt', 'pthread']
+    library_dirs = ['/home/vulcan/nlk36701/.conda/envs/helpme/lib']
+    define_macros = [('SCIPY_MKL_H', None), ('HAVE_CBLAS', None)]
+    include_dirs = ['/home/vulcan/nlk36701/.conda/envs/helpme/include']
+lapack_mkl_info:
+    libraries = ['mkl_rt', 'pthread']
+    library_dirs = ['/home/vulcan/nlk36701/.conda/envs/helpme/lib']
+    define_macros = [('SCIPY_MKL_H', None), ('HAVE_CBLAS', None)]
+    include_dirs = ['/home/vulcan/nlk36701/.conda/envs/helpme/include']
+lapack_opt_info:
+    libraries = ['mkl_rt', 'pthread']
+    library_dirs = ['/home/vulcan/nlk36701/.conda/envs/helpme/lib']
+    define_macros = [('SCIPY_MKL_H', None), ('HAVE_CBLAS', None)]
+    include_dirs = ['/home/vulcan/nlk36701/.conda/envs/helpme/include']
+Nothing to init!!
+Run the RHF code!
+Total electrons, before process 20
+Total electrons, afta 20
+The symmetry code is running in subgroup C1
+   => Loading Basis Set <=
+
+    Name: STO-3G
+    Role: ORBITAL
+    Keyword: BASIS
+    atoms 1-20 entry H          line    19 file /home/vulcan/nlk36701/.conda/envs/helpme/share/psi4/basis/sto-3g.gbs 
+
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+There are 20 AOs in this calculation
+salc list now boi
+SALC from P^A_00 (0) gamma= 1.000
+[1. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+
+SALC from P^A_00 (1) gamma= 1.000
+[0. 1. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+
+SALC from P^A_00 (2) gamma= 1.000
+[0. 0. 1. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+
+SALC from P^A_00 (3) gamma= 1.000
+[0. 0. 0. 1. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+
+SALC from P^A_00 (4) gamma= 1.000
+[0. 0. 0. 0. 1. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+
+SALC from P^A_00 (5) gamma= 1.000
+[0. 0. 0. 0. 0. 1. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+
+SALC from P^A_00 (6) gamma= 1.000
+[0. 0. 0. 0. 0. 0. 1. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+
+SALC from P^A_00 (7) gamma= 1.000
+[0. 0. 0. 0. 0. 0. 0. 1. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+
+SALC from P^A_00 (8) gamma= 1.000
+[0. 0. 0. 0. 0. 0. 0. 0. 1. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+
+SALC from P^A_00 (9) gamma= 1.000
+[0. 0. 0. 0. 0. 0. 0. 0. 0. 1. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+
+SALC from P^A_00 (10) gamma= 1.000
+[0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 1. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+
+SALC from P^A_00 (11) gamma= 1.000
+[0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 1. 0. 0. 0. 0. 0. 0. 0. 0.]
+
+SALC from P^A_00 (12) gamma= 1.000
+[0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 1. 0. 0. 0. 0. 0. 0. 0.]
+
+SALC from P^A_00 (13) gamma= 1.000
+[0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 1. 0. 0. 0. 0. 0. 0.]
+
+SALC from P^A_00 (14) gamma= 1.000
+[0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 1. 0. 0. 0. 0. 0.]
+
+SALC from P^A_00 (15) gamma= 1.000
+[0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 1. 0. 0. 0. 0.]
+
+SALC from P^A_00 (16) gamma= 1.000
+[0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 1. 0. 0. 0.]
+
+SALC from P^A_00 (17) gamma= 1.000
+[0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 1. 0. 0.]
+
+SALC from P^A_00 (18) gamma= 1.000
+[0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 1. 0.]
+
+SALC from P^A_00 (19) gamma= 1.000
+[0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 1.]
+
+salcs by irrep (self.orb_idxs)
+[[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]]
+[[1. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+ [0. 1. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+ [0. 0. 1. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+ [0. 0. 0. 1. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+ [0. 0. 0. 0. 1. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+ [0. 0. 0. 0. 0. 1. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+ [0. 0. 0. 0. 0. 0. 1. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+ [0. 0. 0. 0. 0. 0. 0. 1. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+ [0. 0. 0. 0. 0. 0. 0. 0. 1. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+ [0. 0. 0. 0. 0. 0. 0. 0. 0. 1. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+ [0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 1. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+ [0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 1. 0. 0. 0. 0. 0. 0. 0. 0.]
+ [0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 1. 0. 0. 0. 0. 0. 0. 0.]
+ [0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 1. 0. 0. 0. 0. 0. 0.]
+ [0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 1. 0. 0. 0. 0. 0.]
+ [0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 1. 0. 0. 0. 0.]
+ [0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 1. 0. 0. 0.]
+ [0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 1. 0. 0.]
+ [0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 1. 0.]
+ [0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 1.]]
+The number of salcs per irrep: [20]
+[array([[1., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+       [0., 1., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+       [0., 0., 1., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+       [0., 0., 0., 1., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+       [0., 0., 0., 0., 1., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+       [0., 0., 0., 0., 0., 1., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+       [0., 0., 0., 0., 0., 0., 1., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+       [0., 0., 0., 0., 0., 0., 0., 1., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+       [0., 0., 0., 0., 0., 0., 0., 0., 1., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+       [0., 0., 0., 0., 0., 0., 0., 0., 0., 1., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+       [0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 1., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+       [0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 1., 0., 0., 0., 0., 0., 0., 0., 0.],
+       [0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 1., 0., 0., 0., 0., 0., 0., 0.],
+       [0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 1., 0., 0., 0., 0., 0., 0.],
+       [0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 1., 0., 0., 0., 0., 0.],
+       [0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 1., 0., 0., 0., 0.],
+       [0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 1., 0., 0., 0.],
+       [0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 1., 0., 0.],
+       [0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 1., 0.],
+       [0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 1.]])]
+Initial Orbital Core Guess
+[array([-10.5940967189,  -9.6967662791,  -9.6967662698,  -9.6967662642,  -8.9329150626,  -8.9329150588,  -8.9329150565,  -8.9329150536,  -8.9329150421,  -8.1322554531,  -8.1322554524,  -8.1322554466,  -8.132255441 ,  -6.8286681251,  -6.8286680925,  -6.8286680745,  -6.5554284309,  -6.5554284158,  -6.5554284152,  -6.5554283987])]
+The docc_vector [10]
+Repacking and symmetry blocking ERI
+0 [[1. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+ [0. 1. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+ [0. 0. 1. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+ [0. 0. 0. 1. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+ [0. 0. 0. 0. 1. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+ [0. 0. 0. 0. 0. 1. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+ [0. 0. 0. 0. 0. 0. 1. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+ [0. 0. 0. 0. 0. 0. 0. 1. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+ [0. 0. 0. 0. 0. 0. 0. 0. 1. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+ [0. 0. 0. 0. 0. 0. 0. 0. 0. 1. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+ [0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 1. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+ [0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 1. 0. 0. 0. 0. 0. 0. 0. 0.]
+ [0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 1. 0. 0. 0. 0. 0. 0. 0.]
+ [0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 1. 0. 0. 0. 0. 0. 0.]
+ [0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 1. 0. 0. 0. 0. 0.]
+ [0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 1. 0. 0. 0. 0.]
+ [0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 1. 0. 0. 0.]
+ [0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 1. 0. 0.]
+ [0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 1. 0.]
+ [0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 1.]]
+characters
+[[1.]]
+a [1.]
+[1]
+characters
+[[1.]]
+a [1.]
+[1]
+Manual Repacking Time for all blocks took 0.06850719 seconds
+Going to maximally exploit degeneracy!
+The shape (400, 400)
+The block [0, 0, 0, 0]
+ir 0 Irrep(symbol='A', idx=None, sub_idx=None, d=1)
+characters
+[[1.]]
+a [1.]
+[1]
+characters
+[[1.]]
+a [1.]
+[1]
+Manual Repacking Time for all blocks took 0.06769037 seconds
+Going to maximally exploit degeneracy!
+The shape (400, 400)
+The block [0, 0, 0, 0]
+ir 0 Irrep(symbol='A', idx=None, sub_idx=None, d=1)
+Finished repack  0.143
+Starting SCF Iterations
+Initiating DIIS Manager
+DIIS_Mangager Class Constructed
+Iter   1 SCF energy -1.5677984999 Delta(E) 1.568e+00 RMS(D) 2.949e-01 [10] took 0.0014107 seconds
+Iter   2 SCF energy -1.5732911899 Delta(E) 5.493e-03 RMS(D) 4.252e-02 [10] took 0.0014062 seconds
+Iter   3 SCF energy -1.5733632190 Delta(E) 7.203e-05 RMS(D) 3.241e-02 [10] took 0.0014002 seconds
+Iter   4 SCF energy -1.5733842582 Delta(E) 2.104e-05 RMS(D) 3.170e-02 [10] took 0.0013957 seconds
+Iter   5 SCF energy -1.5734038900 Delta(E) 1.963e-05 RMS(D) 3.15e-02 [10] took 0.0013919 seconds
+Iter   6 SCF energy -1.5734233148 Delta(E) 1.942e-05 RMS(D) 3.134e-02 [10] took 0.0013938 seconds
+Iter   7 SCF energy -1.5734425592 Delta(E) 1.924e-05 RMS(D) 3.118e-02 [10] took 0.0013893 seconds
+Iter   8 SCF energy -1.5734616184 Delta(E) 1.906e-05 RMS(D) 3.102e-02 [10] took 0.0013962 seconds
+Iter   9 SCF energy -1.5734804872 Delta(E) 1.887e-05 RMS(D) 3.086e-02 [10] took 0.0013993 seconds
+Iter  10 SCF energy -1.5734991605 Delta(E) 1.867e-05 RMS(D) 3.069e-02 [10] took 0.0013885 seconds
+Iter  11 SCF energy -1.5735176334 Delta(E) 1.847e-05 RMS(D) 3.052e-02 [10] took 0.0013957 seconds
+Iter  12 SCF energy -1.5735359013 Delta(E) 1.827e-05 RMS(D) 3.034e-02 [10] took 0.0013893 seconds
+Iter  13 SCF energy -1.5735539600 Delta(E) 1.806e-05 RMS(D) 3.016e-02 [10] took 0.0013995 seconds
+Iter  14 SCF energy -1.5735718055 Delta(E) 1.785e-05 RMS(D) 2.997e-02 [10] took 0.0013926 seconds
+Iter  15 SCF energy -1.5735894339 Delta(E) 1.763e-05 RMS(D) 2.978e-02 [10] took 0.0014009 seconds
+Iter  16 SCF energy -1.5736068419 Delta(E) 1.741e-05 RMS(D) 2.958e-02 [10] took 0.0013907 seconds
+Iter  17 SCF energy -1.5736240263 Delta(E) 1.718e-05 RMS(D) 2.939e-02 [10] took 0.0013943 seconds
+Iter  18 SCF energy -1.5736409840 Delta(E) 1.696e-05 RMS(D) 2.918e-02 [10] took 0.0013931 seconds
+Iter  19 SCF energy -1.5736577125 Delta(E) 1.673e-05 RMS(D) 2.898e-02 [10] took 0.0013945 seconds
+Iter  20 SCF energy -1.5736742093 Delta(E) 1.650e-05 RMS(D) 2.877e-02 [10] took 0.0014005 seconds
+Iter  21 SCF energy -1.5736904724 Delta(E) 1.626e-05 RMS(D) 2.856e-02 [10] took 0.0013938 seconds
+Iter  22 SCF energy -1.5737064999 Delta(E) 1.603e-05 RMS(D) 2.835e-02 [10] took 0.0013890 seconds
+Iter  23 SCF energy -1.5737222901 Delta(E) 1.579e-05 RMS(D) 2.813e-02 [10] took 0.0013998 seconds
+Iter  24 SCF energy -1.5737378416 Delta(E) 1.555e-05 RMS(D) 2.791e-02 [10] took 0.0013957 seconds
+Iter  25 SCF energy -1.5737531534 Delta(E) 1.531e-05 RMS(D) 2.769e-02 [10] took 0.0014005 seconds
+Iter  26 SCF energy -1.5737682246 Delta(E) 1.507e-05 RMS(D) 2.746e-02 [10] took 0.0013940 seconds
+Iter  27 SCF energy -1.5737830545 Delta(E) 1.483e-05 RMS(D) 2.723e-02 [10] took 0.0013912 seconds
+Iter  28 SCF energy -1.5737976426 Delta(E) 1.459e-05 RMS(D) 2.701e-02 [10] took 0.0013962 seconds
+Iter  29 SCF energy -1.5738119887 Delta(E) 1.435e-05 RMS(D) 2.678e-02 [10] took 0.0013938 seconds
+Iter  30 SCF energy -1.5738260928 Delta(E) 1.410e-05 RMS(D) 2.654e-02 [10] took 0.0014007 seconds
+Iter  31 SCF energy -1.5738399552 Delta(E) 1.386e-05 RMS(D) 2.631e-02 [10] took 0.0013897 seconds
+Iter  32 SCF energy -1.5738535762 Delta(E) 1.362e-05 RMS(D) 2.607e-02 [10] took 0.0013998 seconds
+Iter  33 SCF energy -1.5738669564 Delta(E) 1.338e-05 RMS(D) 2.584e-02 [10] took 0.0013909 seconds
+Iter  34 SCF energy -1.5738800965 Delta(E) 1.314e-05 RMS(D) 2.56e-02 [10] took 0.0013928 seconds
+Iter  35 SCF energy -1.5738929976 Delta(E) 1.290e-05 RMS(D) 2.536e-02 [10] took 0.0014060 seconds
+Iter  36 SCF energy -1.5739056606 Delta(E) 1.266e-05 RMS(D) 2.512e-02 [10] took 0.0014467 seconds
+Iter  37 SCF energy -1.5739180869 Delta(E) 1.243e-05 RMS(D) 2.488e-02 [10] took 0.0013990 seconds
+Iter  38 SCF energy -1.5739302779 Delta(E) 1.219e-05 RMS(D) 2.464e-02 [10] took 0.0013895 seconds
+Iter  39 SCF energy -1.5739422352 Delta(E) 1.196e-05 RMS(D) 2.44e-02 [10] took 0.0013938 seconds
+Iter  40 SCF energy -1.5739539603 Delta(E) 1.173e-05 RMS(D) 2.415e-02 [10] took 0.0013947 seconds
+Iter  41 SCF energy -1.5739654553 Delta(E) 1.149e-05 RMS(D) 2.391e-02 [10] took 0.0013938 seconds
+Iter  42 SCF energy -1.5739767220 Delta(E) 1.127e-05 RMS(D) 2.367e-02 [10] took 0.0013964 seconds
+Iter  43 SCF energy -1.5739877624 Delta(E) 1.104e-05 RMS(D) 2.343e-02 [10] took 0.0013921 seconds
+Iter  44 SCF energy -1.5739985788 Delta(E) 1.082e-05 RMS(D) 2.318e-02 [10] took 0.0013888 seconds
+Iter  45 SCF energy -1.5740091735 Delta(E) 1.059e-05 RMS(D) 2.294e-02 [10] took 0.0013919 seconds
+Iter  46 SCF energy -1.5740195487 Delta(E) 1.038e-05 RMS(D) 2.27e-02 [10] took 0.0013921 seconds
+Iter  47 SCF energy -1.5740297070 Delta(E) 1.016e-05 RMS(D) 2.246e-02 [10] took 0.0013998 seconds
+Iter  48 SCF energy -1.5740396509 Delta(E) 9.944e-06 RMS(D) 2.222e-02 [10] took 0.0013881 seconds
+Iter  49 SCF energy -1.5740493829 Delta(E) 9.732e-06 RMS(D) 2.197e-02 [10] took 0.0013959 seconds
+Iter  50 SCF energy -1.5740589058 Delta(E) 9.523e-06 RMS(D) 2.173e-02 [10] took 0.0013866 seconds
+Iter  51 SCF energy -1.5740682223 Delta(E) 9.317e-06 RMS(D) 2.149e-02 [10] took 0.0013912 seconds
+Iter  52 SCF energy -1.5740773352 Delta(E) 9.113e-06 RMS(D) 2.126e-02 [10] took 0.0013986 seconds
+Iter  53 SCF energy -1.5740862474 Delta(E) 8.912e-06 RMS(D) 2.102e-02 [10] took 0.0014005 seconds
+SCF Cycles Did Not Converge In 53 Iterations, Donate To The Developers' Patreon
+/home/vulcan/nlk36701/.conda/envs/helpme/lib/python3.8/site-packages/numpy/lib/function_base.py:380: RuntimeWarning: Mean of empty slice.
+  avg = a.mean(axis)
+/home/vulcan/nlk36701/.conda/envs/helpme/lib/python3.8/site-packages/numpy/core/_methods.py:170: RuntimeWarning: invalid value encountered in double_scalars
+  ret = ret.dtype.type(ret / rcount)

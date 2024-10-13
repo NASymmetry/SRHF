@@ -3,6 +3,7 @@ class Options(object):
         #Symmetry
         self.subgroup = kwargs.pop("subgroup", False)
         self.exploit_degen = kwargs.pop("exploit_degen", True)
+        self.fg_as_c1 = kwargs.pop("fg_as_c1", False)
 
         #Starting Guess
         self.docc = kwargs.pop("docc", None)

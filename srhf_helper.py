@@ -40,7 +40,6 @@ class SOrbitals():
     def process_salcs(self):
         #TEMP self.partner_functions()
         print(self.salcs.salc_sets)
-        #print(bibba)
         self.irreplength = []
         if self.options.exploit_degen:
             for s, SET in enumerate(self.salcs.salc_sets):
@@ -85,7 +84,6 @@ class SOrbitals():
         self.salcs.salc_sets = new_salcs
         self.fxn_list = fxn_list
         #print(self.fxn_list)
-        #print(bibba)
         
     def ndocc_irrep(self, C, eps):
         self.DOCC = self.options.docc
@@ -492,7 +490,6 @@ class DPD():
         pq_new = 0
         print(self.orb_idx)
         print("orb idx ^^")
-        #print(bibba)
         for pi, p in enumerate(self.orb_idx[index]):
             for qi, q in enumerate(self.orb_idx[index]):
                 #salc_p = self.salcs.salc_list[p]

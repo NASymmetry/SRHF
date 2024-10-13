@@ -36,7 +36,7 @@ class SRHF():
         electrons = 0
         for atom in range(0, self.molecule.natom()):
             electrons += self.molecule.ftrue_atomic_number(atom)
-        print(f"Total electrons, before charge process {electrons}")
+        print(f"Total electrons, before process {electrons}")
         electrons -= self.molecule.molecular_charge()
         print(f"Total electrons, afta {electrons}")
         #Need something for processing charge as well... do that when you want to test a molecule like that
@@ -68,7 +68,25 @@ class SRHF():
     def handle_salcs(self):
         if self.options.subgroup:
             print(f"The symmetry code is running in subgroup {self.options.subgroup}")
-            self.symtext = self.symtext.subgroup_symtext(self.options.subgroup) 
+            self.symtext = self.symtext.subgroup_symtext(self.options.subgroup)
+
+
+    #method for forcing fg salcs into c1 type object. basically test if salcs are valid using
+    #current infrastructure. as opposed to coding up an additional HF method... 
+    def fgtoc1_salcs(self):
+        print("inside fgtoc1 salcs")
+        print(self.salcs.salcs)
+        print(len(self.salcs.salcs))
+        print(len(self.salcs_fg.salcs))
+        for s, salc in enumerate(self.salcs_fg):
+            #print(f"s salc {s} {salc} {self.salcs_fg.salcs[s]}")
+            if s < (len(self.salcs.salcs)):
+                print("aye")
+                self.salcs.salcs[s].coeffs = self.salcs_fg.salcs[s].coeffs
+        print(self.salcs.salcs)
+          
+        for s, salc in enumerate(self.salcs.salcs):
+            print(f"s salc {s} {salc}")
     def run(self):
         print("Run the RHF code!")
         self.ndocc = self.process_input() // 2
@@ -78,7 +96,7 @@ class SRHF():
         self.symtext = molsym.Symtext.from_molecule(qcmol)
         if self.options.subgroup:
             print(f"The symmetry code is running in subgroup {self.options.subgroup}")
-            self.symtext = self.symtext.subgroup_symtext(self.options.subgroup) 
+            self.symtext = self.symtext.subgroup_symtext(self.options.subgroup)
         mol = self.symtext.mol
         self.molecule.set_geometry(psi4.core.Matrix.from_array(mol.coords))
         #basis set
@@ -93,6 +111,24 @@ class SRHF():
         coords = SphericalHarmonics(self.symtext, bset)
         
         self.salcs = ProjectionOp(self.symtext, coords)
+        if self.options.fg_as_c1:
+            print("The symmetry code is running the full group as c1")
+            self.salcs = ProjectionOp(self.symtext, coords)
+            self.salcs_fg = copy.deepcopy(self.salcs)
+            print("self.salcs of C1")
+            print(self.salcs)
+            self.symtext = self.symtext.subgroup_symtext("C1")
+            self.salcs = ProjectionOp(self.symtext, coords)
+            #print("the keys of self.salcs")
+            #print(vars(self.salcs).keys())
+            #self.salcs.sort_to('blocks')
+            
+            self.fgtoc1_salcs()
+            #print("The fxn_set of full group")
+            #print(vars(self.salcs.fxn_set))
+            #print(vars(self.salcs))
+            print("self.symtext of C1")
+            print(self.symtext)
         self.nbfxns = psi4.core.BasisSet.nbf(self.basis)
         print(f"There are {self.nbfxns} AOs in this calculation")
         #orbital_idxs = self.salcs.salcs_by_irrep
@@ -121,8 +157,7 @@ class SRHF():
                 self.salcs.salc_sets.append(ir_salcs)
                 fxn_list.append([1 for i in range(0, (len(ir_salcs) // self.symtext.irreps[ir].d))])
         #FXN LIST [[1, 1, 1], [], [], [], [1, 1]]
-        print(fxn_list) 
-        #print(bibba)
+        #print(fxn_list) 
         
         #print(vars(self.salcs))
         #print(self.salcs.salc_sets)
@@ -195,7 +230,6 @@ class SRHF():
         print(f"The docc_vector {docc_vector}")
         #build core hamiltonian
         H = T + V
-      
         print("Repacking and symmetry blocking ERI")
         before = time.time()
         self.dpd = DPD(self.salcs.salcs_by_irrep, self.symtext, self.salcs, so_orbitals, D_i, self.options)
@@ -219,14 +253,21 @@ class SRHF():
         for i in range(1, self.options.scf_max_iter + 1):
             before = time.time()
             F, ftime = self.build_fock_blocky_sym(H, D_i, repacked_bigERI, repacked_bigERI_swapped)
+            diis_m.do_diis(F, D_i, S, A, i)
             if self.options.diis:
-                diis_m.do_diis(F, D_i, S, A, i)
-                F = diis_m.create_b() 
+
+                F = diis_m.create_b()
+ 
             E_new = self.degen_rhf_energy(D_i, H, F, so_orbitals) + self.enuc
+            if self.options.diis:
+                dRMS = diis_m.diis.dRMS 
             Fs = A.transpose().dot(F.dot(A))
             eps, Cs = Fs.eigh()
             C = A.dot(Cs)
             D_new, docc_vector = self.build_D(C, eps, so_orbitals)
+            if not self.options.diis:
+                delta_d = D_new - D_i
+                dRMS = np.format_float_scientific(delta_d.frob_norm(), precision = 3)
              
             delta_e = np.format_float_scientific(np.absolute(E_new) - np.absolute(E_i), unique = False, precision=3)
             delta_d = D_new - D_i
