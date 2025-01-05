@@ -10,3 +10,4 @@ pytest-cov==4.0.0
 tomli==2.0.1
 numpy >= 1.23.4
 qcelemental >= 0.25.1
+molsym @ git+https://github.com/NASymmetry/MolSym.git
