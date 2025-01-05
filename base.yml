@@ -11,5 +11,4 @@ dependencies:
     #- psi4
     - pytest
     - pytest-cov
-    - molsym @git+https://github.com/NASymmetry/MolSym.git 
     - coverage
