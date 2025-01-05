@@ -1,0 +1,14 @@
+name: test
+channels:
+  - defaults
+  - conda-forge
+  - psi4
+dependencies:
+    # Base
+    - numpy>=2.0.0
+    - python
+    - qcelemental>=0.28.0
+    #- psi4
+    - pytest
+    - pytest-cov
+    #               - coverage

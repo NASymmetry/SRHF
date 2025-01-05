@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[metadata]
+name = "SRHF"
+version = "0.1.0"
+authors = [
+    "Nate Kitzmiller <nate.kitzmiller@indwes.edu>",
+    ]
+description = "A program for computing restricted hartree fock exploiting non-abelian symmetry"
+long_description = "file: README.md"
+license = "MIT"
+classifiers = [
+    "Programming Language :: Python :: 3"
+    ]
+readme = "README.md"
+requires-python = ">=3.9"
+[options]
+install_requires = [
+    "numpy >= 1.23.4",
+    "qcelemental >= 0.25.1"
+    ]
