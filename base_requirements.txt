@@ -1,0 +1,1 @@
+molsym @ git+https://github.com/NASymmetry/MolSym.git
