@@ -1,0 +1,59 @@
+
+Host: vlogin2.ccqc.uga.edu
+
+Timers On : Sat Jan  4 21:19:57 2025
+Timers Off: Sat Jan  4 21:19:58 2025
+
+Wall Time:        1.41 seconds
+
+                                                       Time (seconds)
+Module                                       User      System        Wall        Calls
+
+--------------------------------------------------------------------------------------
+
+**************************************************************************************
+
+Host: vlogin2.ccqc.uga.edu
+
+Timers On : Sat Jan  4 21:22:55 2025
+Timers Off: Sat Jan  4 21:22:58 2025
+
+Wall Time:        2.38 seconds
+
+                                                       Time (seconds)
+Module                                       User      System        Wall        Calls
+Libint2ERI::Libint2ERI              :      0.000u      0.017s      0.002w      3 calls
+Total PK formation time             :      0.017u      0.017s      0.009w      1 calls
+HF: Form core H                     :      0.000u      0.000s      0.026w      1 calls
+HF: Form S/X                        :      0.000u      0.000s      0.001w      1 calls
+HF: Guess                           :      0.000u      0.000s      0.001w      1 calls
+HF: Form G                          :      0.000u      0.000s      0.001w     10 calls
+JK: D                               :      0.000u      0.000s      0.000w     10 calls
+JK: USO2AO                          :      0.000u      0.000s      0.000w     10 calls
+JK: JK                              :      0.000u      0.000s      0.000w     10 calls
+PK computes JK                      :      0.000u      0.000s      0.000w     10 calls
+JK: AO2USO                          :      0.000u      0.000s      0.000w     10 calls
+HF: Form F                          :      0.000u      0.000s      0.000w     10 calls
+HF: DIIS                            :      0.167u      0.033s      0.182w     10 calls
+HF: Form C                          :      0.000u      0.000s      0.004w     10 calls
+HF: Form D                          :      0.000u      0.000s      0.000w     10 calls
+
+--------------------------------------------------------------------------------------
+Libint2ERI::Libint2ERI              :      0.000u      0.000s      0.000w      1 calls
+Total PK formation time             :      0.017u      0.017s      0.009w      1 calls
+| Libint2ERI::Libint2ERI            :      0.000u      0.017s      0.001w      2 calls
+HF: Form core H                     :      0.000u      0.000s      0.026w      1 calls
+HF: Form S/X                        :      0.000u      0.000s      0.001w      1 calls
+HF: Guess                           :      0.000u      0.000s      0.001w      1 calls
+HF: Form G                          :      0.000u      0.000s      0.001w     10 calls
+| JK: D                             :      0.000u      0.000s      0.000w     10 calls
+| JK: USO2AO                        :      0.000u      0.000s      0.000w     10 calls
+| JK: JK                            :      0.000u      0.000s      0.000w     10 calls
+| | PK computes JK                  :      0.000u      0.000s      0.000w     10 calls
+| JK: AO2USO                        :      0.000u      0.000s      0.000w     10 calls
+HF: Form F                          :      0.000u      0.000s      0.000w     10 calls
+HF: DIIS                            :      0.167u      0.033s      0.182w     10 calls
+HF: Form C                          :      0.000u      0.000s      0.004w     10 calls
+HF: Form D                          :      0.000u      0.000s      0.000w     10 calls
+
+**************************************************************************************
