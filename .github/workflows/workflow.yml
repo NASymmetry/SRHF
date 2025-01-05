@@ -25,7 +25,7 @@ jobs:
     - name: Install
       shell: bash -l {0}
       run: | # Install srhf
-        python -m pip install requirements.txt
+        python -m pip install -r requirements.txt
     - name: Test with pytest
       shell: bash -l {0}
       run: |
