@@ -144,6 +144,52 @@ class BDMatrix():
                 B.append(self[offset:offset + il, offset:offset + il])
             offset += il
         return BDMatrix(B)
+    
+    def symm_slice(self, indices, Orbs):
+        print(indices)
+        print(type(indices[0]))
+        print(indices[0])
+        print(indices[0][0])
+        print(stop)
+        B = []
+        for h, block in enumerate(self.blocks):
+            if len(self.blocks[h]) == 0:
+                B.append(np.array([]))
+            else:
+                print("now apply it")
+        print(stop)
+    def process_string(self, slice, Orbs):
+        for i, string in enumerate(slice):
+            print(f"i = {i}, string = {string}")
+            s = string.split(":")
+            if i == 0 and s[0] == "":
+                row_beg = 0
+
+            return [row_beg, row_end, col_beg, col_end]
+    def slice(self, slice, Orbs):
+        print(f"The string {slice}")
+        print(len(slice))
+        self.process_string(slice, Orbs)
+        B = []
+        for h, block in enumerate(self.blocks):
+            if len(self.blocks[h]) == 0:
+                B.append(np.array([]))
+            else:
+                print("now apply it")
+        print(stop)
+
+    def einsum(self, string, *stuff):
+        #check if *stuff are BDMatrix objects
+        if any(isinstance(st, BDMatrix) == False for st in stuff):
+            raise ValueError("BDMatrix.einsum() only works with BDMatrix *args objects")
+        else:
+            B = []
+            for h, block in enumerate(self.blocks):
+                if len(self.blocks[h]) == 0:
+                    B.append(np.array([]))
+                else:
+                    B.append(np.einsum(string, *[stuff[i].blocks[h] for i in range(len(stuff))], self.blocks[h]))
+        return BDMatrix(B)
 
 if __name__ == "__main__":
     #print('lol where are we')

@@ -18,7 +18,9 @@ from srhf_helper import DPD
 #from so_ints import SO_Ints 
 #from mo_transform import MO_Trans
 
-np.set_printoptions(threshold=sys.maxsize, linewidth=12000, precision=10)
+#np.set_printoptions(threshold=sys.maxsize, linewidth=12000, precision=10)
+np.set_printoptions(precision=5, linewidth=200, suppress=True)
+
 
 class SO_RHF():
     def __init__(self, mymol, basis_input, options):
@@ -107,23 +109,90 @@ class SO_RHF():
             before = time.time()
             F, ftime = self.build_fock_blocky_sym(so_orbitals.H, D_i, repacked_bigERI, repacked_bigERI_swapped)
             diis_m.do_diis(F, D_i, so_orbitals.S, so_orbitals.A, i)
-            #if self.options.diis:
-            #    F = diis_m.create_b()
             E_new = self.degen_rhf_energy(D_i, so_orbitals.H, F, so_orbitals) + self.enuc
             if self.options.diis:
                 dRMS = diis_m.diis.dRMS 
                 print(f"dRMS: {dRMS}")
-            print(f"Iter {i:>3} SCF energy {E_new:>.10f} Delta(E) {E_new - E_i} RMS(D) {dRMS} {docc_vector} took {now - before:.7f} seconds")
+            print(f"Iter {i:>3} SCF energy {E_new:>.10f} Delta(E) {E_new - E_i:>.10f} RMS(D) {dRMS} {docc_vector} took {now - before:.7f} seconds")
+            if (abs(E_new - E_i) < self.options.e_convergence) and (dRMS < self.options.d_convergence):
+                break
             E_i = E_new
             print(f"The density {D_i}")
+            print(f"The diis error {diis_m.error}")
             if np.any(diis_m.error > 0.1):
-                #F = diis_m.
                 F = diis_m.create_b()
+                print(f"Inside diag? The F is {F}")
                 Fs = so_orbitals.A.transpose().dot(F.dot(so_orbitals.A))
                 eps, Cs = Fs.eigh()
                 C = so_orbitals.A.dot(Cs)
+                so_orbitals.C = C
                 D_new, docc_vector = self.build_D(so_orbitals)
                 D_i = D_new
+            else:
+                
+                #now, implement the second order stuff
+                ##build the MO fock
+                #print(C)
+                #moF = so_orbitals.ao_to_mo(F, C, C)
+
+                #print(moF)
+                #BDMatrix.einsum(None, 'ui,vj,uv', *doit)
+                moF = F.einsum('ui,vj,uv', C, C)
+                print(so_orbitals.Orbs[0].ndocc_ir)
+                c1 = moF.blocks[0]
+                print(c1)
+                row_end = 5
+                col_beg = 5
+                test2 = self.create_slices([[None, "ndocc_ir", None], 
+                                    ["ndocc_ir", None, None]], so_orbitals.Orbs)
+                #slice = np.index_exp[:row_end, col_beg:]
+                #test = (slice(None, "ndocc_ir", None), slice("ndocc_ir", None, None))
+                test = (slice(None, 5, None), slice(5, None, None))
+                print(f"The test {test}")
+                print(f"The test2 {test2}")
+                print(-4 * c1[test])
+                print(f"second test ")
+                print(-4 * c1[test2])
+                print(type(slice))
+                print(f"The slice {slice}")
+                #print(-4 * c1[slice])
+                print(-4 * c1[test2])
+                moF.symm_slice(test, so_orbitals.Orbs)
+                moF.slice([":ndocc_ir", "ndocc_ir:"], so_orbitals.Orbs)
+                print(stop)
+                print(so_orbitals.Orbs[0].ndocc_ir)
+                #print("small error")
+                #all of this stuff works
+                F = diis_m.create_b()
+                print(f"Inside diag? The F is {F}")
+                Fs = so_orbitals.A.transpose().dot(F.dot(so_orbitals.A))
+                eps, Cs = Fs.eigh()
+                C = so_orbitals.A.dot(Cs)
+                so_orbitals.C = C
+                D_new, docc_vector = self.build_D(so_orbitals)
+                D_i = D_new
+    def create_slices(self, slice_args, Orbs):
+        #for now, Orbs only supports ndocc_irrep objects
+        #TODO add support for nvirt_irrep as well
+        #print(f"The slice args {slice_args}")
+        trials = []
+        tup = ()
+        for i, s_arg in enumerate(slice_args):
+            #print(f"i = {i}, s_arg = {s_arg}")
+            try:
+                test = []
+                trial = [s if s is None else int(getattr(Orbs[0], s)) for s in s_arg]
+                for x in s_arg:
+                    if x is not None:
+                        test.append(getattr(Orbs[0], x))
+                    else:
+                        test.append(x)
+                test_s = slice(*test)
+                trials.append(test_s)
+            except:
+                raise ValueError(f"It is possible that of the slice arguments within {s_arg} is not a valid attribute of the Orbs object or is not None")
+        #print(f"The trials {trials}")
+        return tuple(trials)
     def degen_rhf_energy(self, D, H, F, SOrbs):
         """
         Calculate HF energy
@@ -240,6 +309,8 @@ class SO_RHF():
         docc_vector = []
         blocks = []
         for h, Cirrep in enumerate(SOrbs.C.blocks):
+            print("hopefully we aren't building with the wrong C")
+            print(Cirrep)
             if self.options.docc is not None:
                 nir = self.options.docc[h]
             else:

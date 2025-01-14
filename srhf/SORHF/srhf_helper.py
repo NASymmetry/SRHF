@@ -135,6 +135,26 @@ class SOrbitals():
     
     def get_norm(self, i):
         return 1/np.sqrt(i)
+ 
+    def ao_to_mo(self, A, B, C):
+        """
+        General transformation of rank to operator where A is the matrix to be transformed,
+        B and C are the left and right hand transformation matrices
+        """
+        B = []
+        for h, c in enumerate(C.blocks):
+            if len(c) == 0:
+                B.append(np.array([]))
+            else:
+                string1 = 'ui,uv->iv'
+                string2 = 'iv,vj->ij'
+                test = np.einsum(string1, c, A.blocks[h], optimize ='optimal')
+                test2 = np.einsum(string2, test, c, optimize ='optimal')
+                print(test2)
+                idk =  np.einsum('ui,uv->iv', c, A.blocks[h], optimize ='optimal')
+                idk1 =  np.einsum('iv,vj->ij',idk, c, optimize ='optimal')
+                B.append(idk1)
+        return BDMatrix(B)
 
     def ao_to_so(self, A):
         """
@@ -146,6 +166,7 @@ class SOrbitals():
             #print(salc[: so_orbitals.irreplength[i]])
             temp1 = np.einsum('uv,ui->iv', A, salc[:self.irreplength[i]].T, optimize ='optimal') 
             temp = np.einsum('iv,vj->ij', temp1, salc[:self.irreplength[i]].T, optimize ='optimal')
+            print(f"The temp {temp} {type(temp)}")
             B.append(temp)
         return BDMatrix(B)
     

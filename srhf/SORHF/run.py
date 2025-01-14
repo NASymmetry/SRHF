@@ -356,6 +356,7 @@ options_kwargs = {
         "d_convergence": 1e-10,
         "compare_psi" : True,
         "diis": True,
+        "scf_max_iter" : 10,
         #"fg_as_c1" : True,
         #"docc" : [1, 0, 0, 0, 1, 0, 0, 0, 0, 0]
         }
