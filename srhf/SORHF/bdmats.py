@@ -52,6 +52,17 @@ class BDMatrix():
             else:
                 suum += sum(sum(block))
         return suum
+    def qr(self):
+        Q = []
+        R = []
+        for i, block in enumerate(self.blocks):
+            if block.size == 0:
+                Q.append(block)
+            else:
+                q, r = np.linalg.qr(block)
+                Q.append(q)
+                R.append(r)
+        return BDMatrix(Q), BDMatrix(R)
 
     def dot(self, A):
         if self.check_size(A):
@@ -65,10 +76,19 @@ class BDMatrix():
                     B.append(np.dot(block, A.blocks[i]))
         return BDMatrix(B)
 
-    def transpose(self):
+    def transpose(self, args = None):
         B = []
         for i, block in enumerate(self.blocks):
-            B.append(block.transpose())
+            if block.size == 0:
+                B.append(block)
+            else:
+                if args == None:
+                    B.append(block.transpose())
+                else:
+                    #print(f"args {args}")
+                    #print(f"The block {block}")
+                    #print(block.shape)
+                    B.append(block.transpose(*args))
         return BDMatrix(B)
     
     def eigh(self):
@@ -134,6 +154,7 @@ class BDMatrix():
             fullmat[c:c+s, c:c+s] = block
             c += s
         return fullmat
+
     def full_to_bd(self, irreplength):
         B = []
         offset = 0
@@ -145,50 +166,127 @@ class BDMatrix():
             offset += il
         return BDMatrix(B)
     
-    def symm_slice(self, indices, Orbs):
-        print(indices)
-        print(type(indices[0]))
-        print(indices[0])
-        print(indices[0][0])
-        print(stop)
-        B = []
-        for h, block in enumerate(self.blocks):
-            if len(self.blocks[h]) == 0:
-                B.append(np.array([]))
+    def furtherv2(self, s, Orbs_h):
+        stuff = []
+        for s_i in s:
+            if s_i == "":
+                stuff.append(None)
             else:
-                print("now apply it")
-        print(stop)
-    def process_string(self, slice, Orbs):
-        for i, string in enumerate(slice):
-            print(f"i = {i}, string = {string}")
-            s = string.split(":")
-            if i == 0 and s[0] == "":
-                row_beg = 0
+                stuff.append(getattr(Orbs_h, s_i))
+        stuff.append(None)
+        return stuff
 
-            return [row_beg, row_end, col_beg, col_end]
-    def slice(self, slice, Orbs):
-        print(f"The string {slice}")
-        print(len(slice))
-        self.process_string(slice, Orbs)
+    def further(self, s, Orbs):
+        stuff = []
+        for s_i in s:
+            if s_i == "":
+                stuff.append(None)
+            else:
+                stuff.append(getattr(Orbs[0], s_i))
+        stuff.append(None)
+        return stuff
+
+    def process_string(self, string_slice, Orbs):
+        trials = []
+        #loop over each index k 
+        for i, string in enumerate(string_slice):
+            #split the string so we know the beginning and end point of each slice
+            s = string.split(":")
+            trials.append(slice(*self.further(s, Orbs)))
+        return tuple(trials)
+    
+    def process_stringv2(self, string_slice, Orbs_h):
+        trials = []
+        #loop over each index k 
+        for i, string in enumerate(string_slice):
+            #split the string so we know the beginning and end point of each slice
+            s = string.split(":")
+            trials.append(slice(*self.furtherv2(s, Orbs_h)))
+        return tuple(trials)
+
+    def inv(self):
+        #print("What is self")
+        #print(self)
         B = []
+        for i, block in enumerate(self.blocks):
+            if block.size == 0:
+                B.append(block)
+            else:
+                B.append(np.linalg.inv(block))
+        return BDMatrix(B)
+
+    def slicev2(self, slice, Orbs, mat = None):
+        #idk_wut = self.process_string(slice, Orbs)
+        #print(f"IDK WUT {idk_wut}")
+        B = []
+        #if len(self.blocks) > 1:
+        #    raise ValueError("This function only works for one irrep, c1 symmetry")
         for h, block in enumerate(self.blocks):
             if len(self.blocks[h]) == 0:
                 B.append(np.array([]))
             else:
-                print("now apply it")
-        print(stop)
+                idk_wut = self.process_stringv2(slice, Orbs[h])
+                if mat != None:
+                    self.blocks[h][idk_wut] = mat.blocks[h]
+                    B.append(self.blocks[h][idk_wut])
+                else:
+                    B.append(self.blocks[h][idk_wut])
+        return BDMatrix(B)
+
+    def slice(self, slice, Orbs, mat = None):
+        idk_wut = self.process_string(slice, Orbs)
+        print(f"IDK WUT {idk_wut}")
+        B = []
+        if len(self.blocks) > 1:
+            raise ValueError("This function only works for one irrep, c1 symmetry")
+        for h, block in enumerate(self.blocks):
+            if len(self.blocks[h]) == 0:
+                B.append(np.array([]))
+            else:
+                if mat != None:
+                    self.blocks[0][idk_wut] = mat.blocks[h]
+                    B.append(self.blocks[0][idk_wut])
+                else:
+                    B.append(self.blocks[0][idk_wut])
+        return BDMatrix(B)
 
     def einsum(self, string, *stuff):
+        #For some reason, the inherant ordering of this places the first operand in BDMatrix.einsum call as the last one in the "stuff" variable
+        #print(stuff[0].blocks[0].shape)
         #check if *stuff are BDMatrix objects
         if any(isinstance(st, BDMatrix) == False for st in stuff):
             raise ValueError("BDMatrix.einsum() only works with BDMatrix *args objects")
         else:
             B = []
             for h, block in enumerate(self.blocks):
+                #print(f"The block h {h} {block.shape}")
                 if len(self.blocks[h]) == 0:
                     B.append(np.array([]))
                 else:
-                    B.append(np.einsum(string, *[stuff[i].blocks[h] for i in range(len(stuff))], self.blocks[h]))
+                    #print(f"The string {string}")
+                    #idk = *[stuff[i].blocks[h] for i in range(len(stuff))], self.blocks[h]
+                    idk = [stuff[i].blocks[h] for i in range(len(stuff))]
+                    #print(len(idk))
+                    #B.append(np.einsum(string, *[stuff[i].blocks[h] for i in range(len(stuff))], self.blocks[h]))
+                    B.append(np.einsum(string, *[stuff[i].blocks[h] for i in range(len(stuff))]))
+        return BDMatrix(B)
+
+    def reshape(self, *args):
+        B = []
+        for h, block in enumerate(self.blocks):
+            if len(self.blocks[h]) == 0:
+                B.append(np.array([]))
+            else:
+                B.append(block.reshape(*args[h]))
+        return BDMatrix(B)
+     
+    def swapaxes(self, *args):
+        B = []
+        for h, block in enumerate(self.blocks):
+            if len(self.blocks[h]) == 0:
+                B.append(np.array([]))
+            else:
+                B.append(block.swapaxes(*args))
         return BDMatrix(B)
 
 if __name__ == "__main__":

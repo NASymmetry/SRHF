@@ -14,6 +14,20 @@ class ORB:
     irrep:int
     degen:int
     ndocc_ir:int
+    nvirt_ir:int
+
+#@dataclass
+#class salc_element:
+#    i_idx:int
+#    s_idx:int
+#    element:float
+
+@dataclass
+class salc_element:
+    i_idx:int #index of the nonzero element within the salc
+    s_idx:int #index of the salc within the irrep
+    element:float #nonzero element of the salc
+    i:int #PF index
 
 class SOrbitals():
     def __init__(self, symtext, salcs, ndocc, options, nbfxns, fxn_list, basis):
@@ -30,7 +44,30 @@ class SOrbitals():
         S = ints.ao_overlap().np
         T = ints.ao_kinetic().np
         V = ints.ao_potential().np
-        self.S = self.ao_to_so(S) 
+        before = time.time()
+        self.S = self.ao_to_so(S)
+        now = time.time()
+        print(f"Transformation time via numpy {now - before:6.8f} seconds")
+        #self.test_S = self.minimal_ao_to_so(S) 
+        before = time.time()
+        self.find_sparse_salcs(1e-5)
+        self.test_S = self.sparse_twoD_transform(S)
+        now = time.time()
+        print(f"Sparse transformation time {now - before:6.8f} seconds")
+        #before = time.time()
+        #self.test_S_manual = self.ao_to_so_manual(S)
+        #now = time.time()
+        #print(f"Manual transformation time {now - before:6.8f} seconds")
+        #for h, hb in enumerate(self.test_S.blocks):
+        #    print(hb.shape)
+        #    print(self.S.blocks[h].shape)
+        #    print("Sparse minus correct")
+        #    print(hb - self.S.blocks[h])
+        #    #print("Manual minus correct")
+        #    #print(self.test_S_manual.blocks[h] - self.S.blocks[h])
+        #print(stop)
+        #print("THe overlap")
+        #print(S)
         T = self.ao_to_so(T) 
         V = self.ao_to_so(V)
         
@@ -45,7 +82,10 @@ class SOrbitals():
         self.H = T + V
         print(f"The initial core Hamiltonian {self.H}")
         self.ndocc_irrep(C, eps)
-        self.C = C 
+        self.C = C
+        self.eps = eps
+    
+
     def rhf_core_guessv2(self, S, T, V):
         A = []
         F = T + V
@@ -66,8 +106,6 @@ class SOrbitals():
         print("Initial Orbital Core Guess")
         print(En)
         C = A.dot(Ct)
-        #print("THE RIGHT C")
-        #print(C)
         return C, A, En
     
     def normalize(self, s):
@@ -150,10 +188,126 @@ class SOrbitals():
                 string2 = 'iv,vj->ij'
                 test = np.einsum(string1, c, A.blocks[h], optimize ='optimal')
                 test2 = np.einsum(string2, test, c, optimize ='optimal')
-                print(test2)
                 idk =  np.einsum('ui,uv->iv', c, A.blocks[h], optimize ='optimal')
                 idk1 =  np.einsum('iv,vj->ij',idk, c, optimize ='optimal')
                 B.append(idk1)
+        return BDMatrix(B)
+
+    def find_sparse_salcs(self, threshold):
+        self.sparse_salcs = []
+        print("self.salcs.salcs")
+        print(self.salcs.salcs)
+        print("self.salcs.salc_sets")
+        print(self.salcs.salc_sets)
+        print("self.salcs.salcs_by_irrep")
+        print(self.salcs.salcs_by_irrep)
+        for h, salc in enumerate(self.salcs.salc_sets):
+            print(self.salcs.salcs_by_irrep[h])
+            #print(f"the irrep {h}")
+            salcs = []
+            #for s_i, s in enumerate(salc):
+            #print("The minimal salcs when exploiting degen")
+            #print(salc[:self.irreplength[h]])
+            for s_i, s in enumerate(salc[:self.irreplength[h]]):
+                overall_s_idx = self.salcs.salcs_by_irrep[h][s_i]
+                #print(f"The s {s}")
+                for i in range(len(s)):
+                    if abs(s[i]) > threshold:
+                        salcs.append(salc_element(i, s_i, s[i], self.salcs.salcs[overall_s_idx].i))
+            self.sparse_salcs.append(salcs)
+            #print(f"The length of irrep {h} is {len(salcs)}")
+        #print("The sparse salcs")
+        #print(self.sparse_salcs)
+
+
+    def iterate_through_sblock(self, h, salc, A):
+        B = np.zeros((len(salc),len(A)))
+        print(A.shape)
+        print(salc.shape[1])
+        for i in range(len(salc)):
+            for j in range(salc.shape[1]):
+                for k in range(salc.shape[1]):
+                    if abs(salc[i,k]) > 1e-5:
+                        B[i,j] += salc[i,k] * A[k,j]
+        print("The A")
+        print(B)
+        
+        print(stop) 
+        for s in salc:
+            print(f"The s {s}")
+            for i in range(len(s)):
+                if abs(s[i]) > 1e-5:
+                    print(s[i])
+
+    def minimal_ao_to_so(self, A):
+        print("inside minimal_ao_to_so")
+        #transform 2D tensor using only nozero salc elements on the upper diagonal
+        for h_i, salc in enumerate(self.salcs.salc_sets):
+            print(f"The irrep {h_i}")
+            print(f"The salc {salc}")
+            print(f"The matrix A {A}")
+            self.iterate_through_sblock(h_i, salc, A)
+        return BDMatrix(B)
+
+    def sparse_twoD_transform(self, A):
+        #print("Sparse TwoD Transform")
+        B = []
+        for h, salcs in enumerate(self.sparse_salcs):
+            temp = np.zeros((len(self.salcs.salc_sets[h][:self.irreplength[h]]), len(self.salcs.salc_sets[h][:self.irreplength[h]])))
+            #print(temp.shape)
+            #for i, salc_i in enumerate(salcs[:self.irreplength[h]]):
+            for i, salc_i in enumerate(salcs):
+                for j, salc_j in enumerate(salcs):
+                    temp[salc_i.s_idx, salc_j.s_idx] += A[salc_i.i_idx, salc_j.i_idx] * salc_i.element * salc_j.element
+            B.append(temp)
+        return BDMatrix(B)
+
+    def sparse_fourD_transform(self, A):
+        print("Inside sparse FourD Transform")
+        print("The eri dog")
+        print(A)
+        #first, flatten self.sparse_salcs
+        print(self.sparse_salcs)
+        #redefine sparse_salcs because we are doing the full ERI this time, so ...
+        sparse_salcs_full = []
+        offset = 0
+        for h, salc in enumerate(self.salcs.salc_sets):
+            for s_i, s in enumerate(salc):
+                for I in range(len(s)):
+                    if abs(s[I]) > 1e-5:
+                        sparse_salcs_full.append(salc_element(I, s_i + offset, s[I], salc.i))
+            offset += self.irreplength[h]
+        print("sparse salcs full")
+        print(sparse_salcs_full)
+        print(len(sparse_salcs_full))
+        #flat_s = self.flatten(self.sparse_salcs)
+        temp = np.zeros((A.shape))
+        for i, salc_i in enumerate(sparse_salcs_full):
+            for j, salc_j in enumerate(sparse_salcs_full):
+                for k, salc_k in enumerate(sparse_salcs_full):
+                    for l, salc_l in enumerate(sparse_salcs_full):
+                        #print(f"i j k l {i, j, k, l}")
+                        temp[salc_i.s_idx, salc_j.s_idx, salc_k.s_idx, salc_l.s_idx] += A[salc_i.i_idx, salc_j.i_idx, salc_k.i_idx, salc_l.i_idx] * salc_i.element * salc_j.element * salc_k.element * salc_l.element
+        print(temp)
+        print(stop)
+        #B.append(temp)
+        return BDMatrix(B)
+                    
+
+
+    def ao_to_so_manual(self, A):
+        """
+        AO->SO transformation for one electron integrals using nested loops
+        """
+        B = []
+        for i, salc in enumerate(self.salcs.salc_sets):
+            temp = np.zeros((salc.shape[0], salc.shape[0]))
+            for u in range(temp.shape[0]):
+                for v in range(temp.shape[0]):
+                    for ui in range(salc.shape[1]):
+                        for vj in range(salc.shape[1]):
+                            temp[u, v] += A[ui, vj] * salc[u, ui] * salc[v, vj]
+            B.append(temp)
         return BDMatrix(B)
 
     def ao_to_so(self, A):
@@ -162,18 +316,12 @@ class SOrbitals():
         """
         B = []
         for i, salc in enumerate(self.salcs.salc_sets):
-            #print(salc)
-            #print(salc[: so_orbitals.irreplength[i]])
             temp1 = np.einsum('uv,ui->iv', A, salc[:self.irreplength[i]].T, optimize ='optimal') 
             temp = np.einsum('iv,vj->ij', temp1, salc[:self.irreplength[i]].T, optimize ='optimal')
-            print(f"The temp {temp} {type(temp)}")
+            #print(f"The temp {temp} {type(temp)}")
             B.append(temp)
         return BDMatrix(B)
     
-                
-
-
-
     def flatten(self, listoflist):
         return [x for xs in listoflist for x in xs]
 
@@ -184,7 +332,7 @@ class SOrbitals():
             if docc == self.ndocc:
                 return i
             elif docc > self.ndocc:
-                if type(self.DOCC) is None:
+                if type(self.options.docc) is None:
                     raise ValueError('This likely means a degenerate orbital is partially occupied')
                 else:
                     warnings.warn("The initial guess has partially occupied a degenerate orbital. The user-input occupation vector {DOCC} will be used... you have been warned.")
@@ -207,9 +355,9 @@ class SOrbitals():
             for SET in self.salcs.salc_sets:
                 self.irreplength.append(SET.shape[0])
     
-        
+    #a super convoluted function that counts the number of occupied and virtual orbitals per irrep
+    #also accounts for degeneracy, if we want to exploit it    
     def ndocc_irrep(self, C, eps):
-        self.DOCC = self.options.docc
         Eval_irreps = []
         Evals = []
         Eval_degen = []
@@ -222,10 +370,12 @@ class SOrbitals():
             else:
                 factor = 1
             orbs = C.blocks[ir]
-            self.Orbs.append(ORB(ir, degen, Optional))
+            self.Orbs.append(ORB(ir, degen, Optional, Optional))
+            
             eval_irreps = [ir for o in range(0, len(orbs))]
             eval_degen = [factor for o in range(0, len(orbs))]
             flat_evals = self.flatten([e_ir])
+            
             Eval_irreps.append(eval_irreps)
             Evals.append(flat_evals)
             Eval_degen.append(eval_degen)
@@ -233,16 +383,20 @@ class SOrbitals():
         self.Eval_irreps = np.array(self.flatten(Eval_irreps))
         self.Evals = np.array(self.flatten(Evals))
         self.Eval_degen = np.array(self.flatten(Eval_degen))
+        
         #sort them by eval size
         sort = np.argsort(self.Evals)
         self.sorted_evals = self.Evals[sort]
         self.sorted_irreps = self.Eval_irreps[sort]
         self.sorted_eval_degen = self.Eval_degen[sort]
+        
         i = self.count_ndocc()
         docc_list = list(self.sorted_irreps[:i + 1])
+        virt_list = list(self.sorted_irreps[i+1:])
         for o, orbs in enumerate(self.Orbs):
             ndocc_ir = docc_list.count(o)
             orbs.ndocc_ir = ndocc_ir
+            orbs.nvirt_ir = virt_list.count(o)
 
 #Class for repacking TEIs using symmetry arguments
 #optionally exploiting degeneracy and repacking even further
@@ -272,22 +426,170 @@ class DPD():
     def dp_contains_tsir(self, a, b, *args):
         #ctab = self.symtext.chartable
         ctab = self.symtext.character_table
-        print(f"characters")
-        print(ctab)
+        #print(f"characters")
+        #print(ctab)
         a = ctab[a,:]
-        print(f"a {a}")
+        #print(f"a {a}")
         b = ctab[b,:]
         chars = a * b
         for arg in args:
             #chars *= ctab.characters[arg]
             chars *= ctab[arg, :]
-        print(self.symtext.class_orders)
+        #print(self.symtext.class_orders)
         s = sum(chars * self.symtext.class_orders * ctab[0, :])
         n = s / sum(self.symtext.class_orders)
         if np.isclose(n, 0, atol = 1e-4):
             return False
         return True
 
+    def sparse_ERI_transform(self, tensor):
+        print("Inside sparse ERI transform")
+        sparse_salcs_full = []
+        offset = 0
+        for h, salc in enumerate(self.salcs.salc_sets):
+            salcs = []
+            for s_i, s in enumerate(salc):
+                overall_s_idx = self.salcs.salcs_by_irrep[h][s_i]
+                for I in range(len(s)):
+                    if abs(s[I]) > 1e-5:
+                        #sparse_salcs_full.append(salc_element(I, s_i + offset, s[I]))
+                        #salcs.append(salc_element(I, s_i + offset, s[I]))
+                        salcs.append(salc_element(I, s_i, s[I], self.salcs.salcs[overall_s_idx].i))
+                        #salcs.append(salc_element(I, s_i, s[I], salc.i))
+            sparse_salcs_full.append(salcs)
+            offset += self.irreplength[h]
+        print("The nonzero blocks")
+        nonzero_blocks = self.nonzero_tiles()
+        print(f"The nonzero blocks {nonzero_blocks}")
+        self.braket = []
+        for b, block in enumerate(nonzero_blocks):
+            print(f"b and block {b} {block}")
+            #if comparing to the old algorithm, you'll notice we skipped the "indices" function call
+            #which nonintuitively repacks the ERI tensor into a 2D array
+            #this step will be skipped for now, because repacking will occur at time of sparse ERI  transform
+            if self.options.exploit_degen:
+                print("Going to maximally exploit degeneracy!")
+                #self.lookup_degen()
+                #refactor "lookup_degen code." Just need bra_degen and ket_degen returned for a particular block
+                bra_degen, ket_degen = self.lookup_braket_degen(block)
+
+            else:
+                print("Even if we have degeneracy, not gonna take advantage of it")
+                #self.braket is used within the JK build function, which allows the fock build JK contributions to be scaled by the degeneracy
+                #IF the degeneracy is being exploited
+                #self.braket = []
+                for b, block in enumerate(self.nonzero_blocks):
+                    self.braket.append(0)
+
+                    #incorporate code that performs the transformation and repacks into a 2D tensor, nothing further
+                    #theoretically this could be a sparse or np.einsum transform (or some hybrid)
+
+            #check for degeneracy in the bra or ket
+
+            #condition 1, no degeracy in the bra or ket
+            if self.nor((bra_degen > 1), (ket_degen > 1)):
+                self.braket.append(0)
+                #the function call to transform the ERI should be uniform with the call above that doesn't exploit degeneracy
+
+            #condition 2, either the bra or ket has degeneracy to be exploited in transform
+            elif self.xor((bra_degen > 1), (ket_degen > 1)):
+                if bra_degen > 1:
+                    self.braket.append(1)
+                    #traditionally, degen_bra used to repack the 2D tensor to exploit degeneracy...
+                    #self.degen_bra(block, b, bra_degen)
+                elif ket_degen > 1:
+                    self.braket.append(2)
+                    #traditionally, degen_ket used to repack the 2D tensor to exploit degeneracy...
+                    #self.degen_ket(block, b, ket_degen)
+                    print("The arguments")
+                    print(block)
+                    print(b)
+                    print(ket_degen)
+                    print(sparse_salcs_full)
+                    twod_eri = self.sparse_degen_ket(block, b, ket_degen, sparse_salcs_full, tensor)
+            elif self.And((bra_degen > 1), (ket_degen > 1)): 
+                self.braket.append(3)
+                #traditionally, degen_braket used to repack the 2D tensor to exploit degeneracy...
+                #self.degen_braket(block, b, bra_degen, ket_degen)
+
+    def sparse_degen_ket(self, block, b, ket_degen, sparse_salcs_full, tensor):
+        print("Inside Sparse Degen Ket")
+        print(tensor.shape)
+        print(f"The ket degen {ket_degen}")
+        print(f"The incoming block {block}")
+        ir1, ir2, ir3, ir4 = block[0], block[1], block[2], block[3]
+        print(f"The irreps {ir1, ir2, ir3, ir4}")
+        print(f"The irreplength {self.irreplength}")
+        #since ket degen, #self.irreplength[ir3] is the number of functions when exploiting degen
+        print(self.salcs.salcs_by_irrep)
+        print(self.salcs.salcs_by_irrep[ir3])
+        nfunx = self.irreplength[ir3]
+        #setup 4 for-loops to create the nonzero ERI tensor blocks
+        #temp = np.zeros((self.irreplength[ir1], self.irreplength[ir2], ket_degen * self.irreplength[ir3], ket_degen * self.irreplength[ir4]))
+        #temp = np.zeros((self.irreplength[ir1], self.irreplength[ir2], ket_degen * self.irreplength[ir3], ket_degen * self.irreplength[ir4]))
+        #temp2 = np.zeros((self.irreplength[ir1] * self.irreplength[ir2], ket_degen * self.irreplength[ir3] * ket_degen * self.irreplength[ir4]))
+        #temp3 = np.zeros((self.irreplength[ir1] * self.irreplength[ir2],  self.irreplength[ir3] * ket_degen * self.irreplength[ir4]))
+        temp3 = np.zeros((self.irreplength[ir1] **2,  self.irreplength[ir3] **2))
+        #print(temp.shape)
+        ket_total = 0
+        for i, salc_i in enumerate(sparse_salcs_full[ir1]):
+            for j, salc_j in enumerate(sparse_salcs_full[ir2]):
+                for k, salc_k in enumerate(sparse_salcs_full[ir3]):
+                    for l, salc_l in enumerate(sparse_salcs_full[ir4]):
+                        if salc_k.i == salc_l.i:
+                            #ij = self.irreplength[ir2] * salc_i.s_idx + salc_j.s_idx
+                            #kl = self.irreplength[ir4] * salc_k.s_idx + salc_l.s_idx
+                            ij = len(self.orb_idx[ir2]) * salc_i.s_idx + salc_j.s_idx
+                            #kl = len(self.orb_idx[ir4]) * salc_k.s_idx + salc_l.s_idx
+
+                            #checks the "column" of the irrep matrice the function belongs to, instead of indexing the i/j value
+                            factor = salc_k.s_idx // nfunx
+                            factor2 = salc_l.s_idx // nfunx
+                            #idk = factor2 * self.irreplength[ir4] + salc_l.s_idx
+                            kl2 = self.irreplength[ir4] * (salc_k.s_idx - factor)  + salc_l.s_idx - (self.irreplength[ir4] * nfunx *factor2) #- factor2 * self.irreplength[ir4] #+ salc_l.s_idx 
+                            #if ij > 0:
+                            #    break
+                            #print(f"ijkl {salc_i.s_idx, salc_j.s_idx, salc_k.s_idx, salc_l.s_idx}")
+                            #print(f"ij kl {ij, kl}")
+                            #print(f"salcs {salc_i, salc_j, salc_k, salc_l}")
+                            #tensor[salc_i.i_idx, salc_j.i_idx, salc_k.i_idx, salc_l.i_idx] * salc_i.element * salc_j.element * salc_k.element * salc_l.element
+                            #print(f" {len(self.salcs.salcs_by_irrep[ir4]) / ket_degen}")
+                            #print((ket_degen - (ket_degen % salc_k.s_idx)) / salc_k.s_idx)
+                            # 3 % 2
+
+                            #the quotient of the salc index and number of minimal # of functions 
+                            factor = salc_k.s_idx // nfunx
+                            #f2 = factor * nfunx
+                            function_factor = nfunx **2 * ket_degen
+                        
+                            #temp[salc_i.s_idx, salc_j.s_idx, salc_k.s_idx, salc_l.s_idx] += tensor[salc_i.i_idx, salc_j.i_idx, salc_k.i_idx, salc_l.i_idx] * salc_i.element * salc_j.element * salc_k.element * salc_l.element
+                            #temp2[salc_i.s_idx * salc_j.s_idx, salc_k.s_idx * salc_l.s_idx] += tensor[salc_i.i_idx, salc_j.i_idx, salc_k.i_idx, salc_l.i_idx] * salc_i.element * salc_j.element * salc_k.element * salc_l.element
+                            #temp2[ij,kl] += tensor[salc_i.i_idx, salc_j.i_idx, salc_k.i_idx, salc_l.i_idx] * salc_i.element * salc_j.element * salc_k.element * salc_l.element
+                            #temp2[ij+ 1,kl - factor * function_factor - nfunx * factor] += tensor[salc_i.i_idx, salc_j.i_idx, salc_k.i_idx, salc_l.i_idx] * salc_i.element * salc_j.element * salc_k.element * salc_l.element
+                            #temp3[ij,kl] += tensor[salc_i.i_idx, salc_j.i_idx, salc_k.i_idx, salc_l.i_idx] * salc_i.element * salc_j.element * salc_k.element * salc_l.element
+                            temp3[ij,kl2] += tensor[salc_i.i_idx, salc_j.i_idx, salc_k.i_idx, salc_l.i_idx] * salc_i.element * salc_j.element * salc_k.element * salc_l.element
+        print("The temp3")
+        print(temp3)
+        print(stop)
+
+    def nonzero_tiles(self):
+        #combinations of i, j, k, and l that are nonzero for HF ERI
+        #checks if direct product of ij (bra) and kl (ket) contain TSIR within themselves
+        nonzero_blocks = []
+        for i in range(0, len(self.orb_idx)):
+            if len(self.orb_idx[i]) != 0:
+                for j in range(0, len(self.orb_idx)):
+                    if len(self.orb_idx[j]) != 0:
+                        if self.dp_contains_tsir(i, j):
+                            for k in range(0, len(self.orb_idx)):
+                                if len(self.orb_idx[k]) != 0:
+                                    for l in range(0, len(self.orb_idx)):
+                                        if len(self.orb_idx[l]) != 0:
+                                            if self.dp_contains_tsir(k, l):
+                                                #idk what i and k_symmetry are at this point
+                                                #return i, j, k, l
+                                                nonzero_blocks.append([i, j, k, l])
+        return nonzero_blocks
 
     def lookup_hf_ERI(self, tensor):
         self.tensor = tensor
@@ -394,71 +696,28 @@ class DPD():
     def transform(self, A, i,j,k,l):
         E = np.einsum("PQRS,Pp,Qq,Rr,Ss", A, i.T,j.T,k.T,l.T, optimize ='optimal')
         return E 
-    def alternate(self, A):
-        self.trial = []
-        for block in self.nonzero_blocks:
-            si = self.salcs.salc_sets[block[0]]
-            sj = self.salcs.salc_sets[block[1]]
-            sk = self.salcs.salc_sets[block[2]]
-            sl = self.salcs.salc_sets[block[3]]
-            eri_s = self.transform(A, si, sj, sk, sl)
-            bra_s = eri_s.shape[0] 
-            ket_s = eri_s.shape[2]
-            twod = np.reshape(eri_s, (bra_s **2, ket_s **2))
-            self.trial.append(twod)
-        #test against good method
-        self.twod_tensor = copy.deepcopy(self.trial)
-        if self.options.exploit_degen:
-            print("Going to maximally exploit degeneracy!")
-            self.lookup_degen()
-        else:
-            print("Even if we have degeneracy, not gonna take advantage of it")
-            self.braket = []
-            for b, block in enumerate(self.nonzero_blocks):
-                self.braket.append(0)
-
-    def alternate_swap(self, A):
-        self.trial_swap = []
-        for block in self.nonzero_blocks:
-            si = self.salcs.salc_sets[block[0]]
-            sj = self.salcs.salc_sets[block[1]]
-            sk = self.salcs.salc_sets[block[2]]
-            sl = self.salcs.salc_sets[block[3]]
-            #IF INPUT IS NOT SWAPPED, THIS WORKS
-            
-            eri_s = self.transform(A, si, sk, sj, sl)
-            bra_s = eri_s.shape[0] 
-            ket_s = eri_s.shape[3]
-            eri_s = np.swapaxes(eri_s, 1,2)
-            ##IF INPUT IS NOT SWAPPED, THIS WORKS V2
-            
-            #eri_s = self.transform(A, si, sj, sk, sl)
-            #bra_s = eri_s.shape[0] 
-            #ket_s = eri_s.shape[3]
-            ##eri_s = np.swapaxes(eri_s, 1,2)
-            #print(eri_s.shape) 
-            #self.trial_swap.append(pp)
-            
-            #TRY THIS THO
-             
-            #eri_s = self.transform(A, si, sj, sk, sl)
-            #bra_s = eri_s.shape[0] 
-            #ket_s = eri_s.shape[3]
-            ##eri_s = np.swapaxes(eri_s, 1,2)
-            ##print(eri_s.shape) 
-            #self.trial_swap.append(pp)
-        #test against good method
-        self.twod_tensor = copy.deepcopy(self.trial_swap)
-        if self.options.exploit_degen:
-            print("Going to maximally exploit degeneracy!")
-            self.lookup_degen()
-        else:
-            print("Even if we have degeneracy, not gonna take advantage of it")
-            self.braket = []
-            for b, block in enumerate(self.nonzero_blocks):
-                self.braket.append(0)
-
-
+    
+    def lookup_braket_degen(self, block):
+        print("inside lookup braket degen")
+        #set initial degeneracies to minimal values, loop thru possible irreps within the group and check if contained in the direct product
+        #as of now, like the previous code, this code will only work if irreps in bra are the same and if the irreps in ket are the same...
+        #will need a generalized code for when irreps within bra (2 or more) are not necessarily the same...
+        bra_degen, ket_degen = 1, 1
+        for ir, irrep in enumerate(self.symtext.irreps):
+            print(f"ir {ir} {irrep}")
+            if self.symtext.irreps[ir].d > 1:
+                #assign variables to bra and ket irreps
+                ir0, ir1 = block[0], block[1]
+                ir2, ir3 = block[2], block[3]
+                #is irrep contained in direct product of bra?
+                if (ir == ir0) and (ir == ir1):
+                    if self.symtext.irreps[ir].d >= bra_degen:
+                        bra_degen = self.symtext.irreps[ir].d
+                #is irrep contained in direct product of ket?
+                if (ir == ir2) and (ir == ir3):
+                    if self.symtext.irreps[ir].d >= ket_degen:
+                        ket_degen = self.symtext.irreps[ir].d
+        return bra_degen, ket_degen
 
     def lookup_degen(self):
         ctab = self.symtext.character_table
@@ -533,22 +792,27 @@ class DPD():
             elif self.And((bra_degen > 1), (ket_degen > 1)): 
                 self.braket.append(3)
                 self.degen_braket(block, b, bra_degen, ket_degen)
+
     def degen_ket(self, block, b, degen):
-        #print("Inside degen ket")
-        #print(block)
+        print("Inside degen ket")
+        print(block)
         d_sym = block[3]
         oned_d_s = self.Doned[d_sym] 
         neri = self.ket_iter_salc_irrep_v2(block[3], b, oned_d_s, degen)
-        print(self.twod_tensor)   
+        #print(self.twod_tensor)
+        print(f"The neri")
+        print(neri)
         self.twod_tensor[b] = neri
     
     def degen_bra(self, block, b, degen):
-        #print("Inside degen bra")
-        #print(block)
+        print("Inside degen bra")
+        print(block)
         d_sym = block[3]
         oned_d_s = self.Doned[d_sym] 
         #neri = self.bra_iter_salc_irrep(block[0], b, oned_d_s, degen)
         neri = self.bra_iter_salc_irrep_v2(block[0], b, oned_d_s, degen)
+        print("The neri")
+        print(neri)
         self.twod_tensor[b] = neri
     
     def degen_braket(self, block, b, bra_degen, ket_degen):
@@ -560,6 +824,8 @@ class DPD():
         self.twod_tensor[b] = neri
     
     def ket_iter_salc_irrep_v2(self, index, b, density, degen):
+        print("The function to be repacked")
+        print(self.twod_tensor[b])
         nfxn = self.irreplength[index]
         #nfxn = len(self.fxn_list[index])
         limit = (nfxn **2) * degen
@@ -600,6 +866,8 @@ class DPD():
                         total += 1
     
     def bra_iter_salc_irrep_v2(self, index, b, density, degen):
+        print("The tensor to be repacked (bra)")
+        print(self.twod_tensor[b])
         nfxn = self.irreplength[index]
         #nfxn = len(self.fxn_list[index])
         limit = (nfxn **2) * degen
@@ -672,6 +940,7 @@ class DPD():
                                     rs_new += 1
                                     total += 1 
                     pq_new += 1  
+
     def compress_neri(self, new, ket_nfxn, ket_degen):
         neri = np.zeros((new.shape[0], new.shape[1] // ket_degen))
         offset = ket_nfxn**2
@@ -738,3 +1007,67 @@ class DPD():
     #    self.salcs.salc_sets = new_salcs
     #    self.fxn_list = fxn_list
     #    #print(self.fxn_list)
+
+#    def alternate(self, A):
+#        self.trial = []
+#        for block in self.nonzero_blocks:
+#            si = self.salcs.salc_sets[block[0]]
+#            sj = self.salcs.salc_sets[block[1]]
+#            sk = self.salcs.salc_sets[block[2]]
+#            sl = self.salcs.salc_sets[block[3]]
+#            eri_s = self.transform(A, si, sj, sk, sl)
+#            bra_s = eri_s.shape[0] 
+#            ket_s = eri_s.shape[2]
+#            twod = np.reshape(eri_s, (bra_s **2, ket_s **2))
+#            self.trial.append(twod)
+#        #test against good method
+#        self.twod_tensor = copy.deepcopy(self.trial)
+#        if self.options.exploit_degen:
+#            print("Going to maximally exploit degeneracy!")
+#            self.lookup_degen()
+#        else:
+#            print("Even if we have degeneracy, not gonna take advantage of it")
+#            self.braket = []
+#            for b, block in enumerate(self.nonzero_blocks):
+#                self.braket.append(0)
+
+#    def alternate_swap(self, A):
+#        self.trial_swap = []
+#        for block in self.nonzero_blocks:
+#            si = self.salcs.salc_sets[block[0]]
+#            sj = self.salcs.salc_sets[block[1]]
+#            sk = self.salcs.salc_sets[block[2]]
+#            sl = self.salcs.salc_sets[block[3]]
+#            #IF INPUT IS NOT SWAPPED, THIS WORKS
+#            
+#            eri_s = self.transform(A, si, sk, sj, sl)
+#            bra_s = eri_s.shape[0] 
+#            ket_s = eri_s.shape[3]
+#            eri_s = np.swapaxes(eri_s, 1,2)
+#            ##IF INPUT IS NOT SWAPPED, THIS WORKS V2
+#            
+#            #eri_s = self.transform(A, si, sj, sk, sl)
+#            #bra_s = eri_s.shape[0] 
+#            #ket_s = eri_s.shape[3]
+#            ##eri_s = np.swapaxes(eri_s, 1,2)
+#            #print(eri_s.shape) 
+#            #self.trial_swap.append(pp)
+#            
+#            #TRY THIS THO
+#             
+#            #eri_s = self.transform(A, si, sj, sk, sl)
+#            #bra_s = eri_s.shape[0] 
+#            #ket_s = eri_s.shape[3]
+#            ##eri_s = np.swapaxes(eri_s, 1,2)
+#            ##print(eri_s.shape) 
+#            #self.trial_swap.append(pp)
+#        #test against good method
+#        self.twod_tensor = copy.deepcopy(self.trial_swap)
+#        if self.options.exploit_degen:
+#            print("Going to maximally exploit degeneracy!")
+#            self.lookup_degen()
+#        else:
+#            print("Even if we have degeneracy, not gonna take advantage of it")
+#            self.braket = []
+#            for b, block in enumerate(self.nonzero_blocks):
+#                self.braket.append(0)
