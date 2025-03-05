@@ -91,7 +91,8 @@ class SRHF():
         self.dpd = DPD(self.salcs.salcs_by_irrep, self.symtext, self.salcs, so_orbitals, D_i, self.options)
         #repacked_bigERI_swapped = self.dpd.trial_swap
         if self.options.sparse_transform:
-            self.dpd.sparse_ERI_transform(ERI)
+            repacked_bigERI = self.dpd.sparse_ERI_transform(ERI, swap = False)
+            repacked_bigERI_swapped = self.dpd.sparse_ERI_transform(ERI, swap = True)
         else:
             bigERI = self.aotoso_2(ERI)
             #test_bigERI = so_orbitals.sparse_fourD_transform(ERI)
@@ -100,13 +101,21 @@ class SRHF():
             self.dpd.lookup_hf_ERI(bigERI)
             #twod pre J
             #test the new functionality first, remember default is to use the sparse transform
-            test_repacked_bigERI = self.dpd.sparse_ERI_transform(ERI)
+            test_repacked_bigERI = self.dpd.sparse_ERI_transform(ERI, swap = False)
             repacked_bigERI = self.dpd.twod_tensor
-            print(stop)
+            for r, re in enumerate(repacked_bigERI):
+                print(re - test_repacked_bigERI[r])
             #twod pre K
             ERI_swapped = np.swapaxes(bigERI, 1, 2)
             self.dpd.lookup_hf_ERI(ERI_swapped)
             repacked_bigERI_swapped = self.dpd.twod_tensor
+            print("first block of repak swap")
+            print(repacked_bigERI_swapped[0])
+            #test_repacked_bigERI_swapped = self.dpd.sparse_ERI_transform(np.swapaxes(ERI, 1, 2), swap = False)
+            test_repacked_bigERI_swapped = self.dpd.sparse_ERI_transform(ERI, swap = True)
+            for r, re in enumerate(repacked_bigERI_swapped):
+                print(re - test_repacked_bigERI_swapped[r])
+            print(stop)
         now = time.time()
         print(f"Finished repack {now - before:6.3f}")
         print("Starting SCF Iterations")
@@ -125,6 +134,7 @@ class SRHF():
             print(f"Iter {i:>3} SCF energy {E_new:>.10f} Delta(E) {E_new - E_i:^+.10f} RMS(D) {dRMS} {docc_vector} {iter_type} took {now - before:.7f} seconds")
             if (abs(E_new - E_i) < self.options.e_convergence) and (dRMS < self.options.d_convergence):
                 self.so_orbitals = so_orbitals
+                #This won't work if using the sparse transform for now... need ERI transform for post-hf
                 self.ERI = bigERI
                 self.so_orbitals.C = C
                 self.so_orbitals.eps = eps

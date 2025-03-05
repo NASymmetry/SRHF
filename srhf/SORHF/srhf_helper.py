@@ -442,7 +442,7 @@ class DPD():
             return False
         return True
 
-    def sparse_ERI_transform(self, tensor):
+    def sparse_ERI_transform(self, tensor, swap):
         #print("Inside sparse ERI transform")
         sparse_salcs_full = []
         offset = 0
@@ -460,7 +460,9 @@ class DPD():
             offset += self.irreplength[h]
         #print("The nonzero blocks")
         nonzero_blocks = self.nonzero_tiles()
+        self.nonzero_blocks = nonzero_blocks
         #print(f"The nonzero blocks {nonzero_blocks}")
+        B = []
         self.braket = []
         for b, block in enumerate(nonzero_blocks):
             #print(f"b and block {b} {block}")
@@ -474,12 +476,15 @@ class DPD():
                 bra_degen, ket_degen = self.lookup_braket_degen(block)
 
             else:
+                bra_degen, ket_degen = 1, 1
                 #print("Even if we have degeneracy, not gonna take advantage of it")
                 #self.braket is used within the JK build function, which allows the fock build JK contributions to be scaled by the degeneracy
                 #IF the degeneracy is being exploited
                 #self.braket = []
                 for b, block in enumerate(self.nonzero_blocks):
                     self.braket.append(0)
+                    twod_eri = self.sparse_nondegen_transform(block, b, sparse_salcs_full, tensor, swap)
+                    B.append(twod_eri)
 
                     #incorporate code that performs the transformation and repacks into a 2D tensor, nothing further
                     #theoretically this could be a sparse or np.einsum transform (or some hybrid)
@@ -489,6 +494,8 @@ class DPD():
             #condition 1, no degeracy in the bra or ket
             if self.nor((bra_degen > 1), (ket_degen > 1)):
                 self.braket.append(0)
+                twod_eri = self.sparse_nondegen_transform(block, b, sparse_salcs_full, tensor, swap)
+                B.append(twod_eri)
                 #the function call to transform the ERI should be uniform with the call above that doesn't exploit degeneracy
 
             #condition 2, either the bra or ket has degeneracy to be exploited in transform
@@ -497,8 +504,8 @@ class DPD():
                     self.braket.append(1)
                     #traditionally, degen_bra used to repack the 2D tensor to exploit degeneracy...
                     #self.degen_bra(block, b, bra_degen)
-                    twod_eri = self.sparse_degen_bra(block, b, bra_degen, sparse_salcs_full, tensor)
-                    self.braket.append(twod_eri)
+                    twod_eri = self.sparse_degen_bra(block, b, bra_degen, sparse_salcs_full, tensor, swap)
+                    B.append(twod_eri)
                 elif ket_degen > 1:
                     self.braket.append(2)
                     #traditionally, degen_ket used to repack the 2D tensor to exploit degeneracy...
@@ -508,85 +515,207 @@ class DPD():
                     #print(b)
                     #print(ket_degen)
                     #print(sparse_salcs_full)
-                    twod_eri = self.sparse_degen_ket(block, b, ket_degen, sparse_salcs_full, tensor)
-                    self.braket.append(twod_eri)
+                    twod_eri = self.sparse_degen_ket(block, b, ket_degen, sparse_salcs_full, tensor, swap)
+                    B.append(twod_eri)
             elif self.And((bra_degen > 1), (ket_degen > 1)): 
                 self.braket.append(3)
-                twod_eri = self.sparse_degen_braket(block, b, bra_degen, ket_degen, sparse_salcs_full, tensor)
+                twod_eri = self.sparse_degen_braket(block, b, bra_degen, ket_degen, sparse_salcs_full, tensor, swap)
+                B.append(twod_eri)
                 #traditionally, degen_braket used to repack the 2D tensor to exploit degeneracy...
                 #self.degen_braket(block, b, bra_degen, ket_degen)
-    
-    def sparse_degen_braket(self, block, b, bra_degen, ket_degen, sparse_salcs_full, tensor):
+        return B
+
+    def sparse_nondegen_transform(self, block, b, sparse_salcs_full, tensor, swap):
+        print("The block")
+        print(block)
+        print("sparse salc list")
+        print(sparse_salcs_full[block[0]])
+        ir1, ir2, ir3, ir4 = block[0], block[1], block[2], block[3]
+        temp = np.zeros((len(self.orb_idx[ir1]) * len(self.orb_idx[ir2]), len(self.orb_idx[ir3]) * len(self.orb_idx[ir4])))
+        ir1_fxns = len(self.orb_idx[ir1])
+        ir3_fxns = len(self.orb_idx[ir3])
+        #evaluate this true statement at the top of the list to prevent slowdown if it was at the bottom of 4 for-loops
+        if swap:
+            for i, salc_i in enumerate(sparse_salcs_full[ir1]):
+                for j, salc_j in enumerate(sparse_salcs_full[ir2]):
+                    for k, salc_k in enumerate(sparse_salcs_full[ir3]):
+                        for l, salc_l in enumerate(sparse_salcs_full[ir4]):
+                            #ij = len(self.orb_idx[ir1]) * salc_i.s_idx + salc_j.s_idx
+                            #kl = len(self.orb_idx[ir3]) * salc_k.s_idx + salc_l.s_idx
+                            ij = ir1_fxns * salc_i.s_idx + salc_j.s_idx
+                            kl = ir3_fxns * salc_k.s_idx + salc_l.s_idx
+                            #index ERI by I[i,k,j,l]
+                            temp[ij,kl] += tensor[salc_i.i_idx, salc_k.i_idx, salc_j.i_idx, salc_l.i_idx] * salc_i.element * salc_j.element * salc_k.element * salc_l.element
+        else:
+            for i, salc_i in enumerate(sparse_salcs_full[ir1]):
+                for j, salc_j in enumerate(sparse_salcs_full[ir2]):
+                    for k, salc_k in enumerate(sparse_salcs_full[ir3]):
+                        for l, salc_l in enumerate(sparse_salcs_full[ir4]):
+                            #ij = len(self.orb_idx[ir1]) * salc_i.s_idx + salc_j.s_idx
+                            #kl = len(self.orb_idx[ir3]) * salc_k.s_idx + salc_l.s_idx
+                            ij = ir1_fxns * salc_i.s_idx + salc_j.s_idx
+                            kl = ir3_fxns * salc_k.s_idx + salc_l.s_idx
+                            #index ERI by I[i,j,k,l]
+                            temp[ij,kl] += tensor[salc_i.i_idx, salc_j.i_idx, salc_k.i_idx, salc_l.i_idx] * salc_i.element * salc_j.element * salc_k.element * salc_l.element
+
+        print("The temp")
+        print(temp)
+        return temp
+
+    def sparse_degen_braket(self, block, b, bra_degen, ket_degen, sparse_salcs_full, tensor, swap):
         ir1, ir2, ir3, ir4 = block[0], block[1], block[2], block[3]
         #since ket degen, #self.irreplength[ir3] is the number of functions when exploiting degen
         nfunx_ij = self.irreplength[ir1]
         nfunx_kl = self.irreplength[ir3]
+
+        ir1_fxns = self.irreplength[ir1]
+        ir2_fxns = self.irreplength[ir2]
+        ir3_fxns = self.irreplength[ir3]
+        ir4_fxns = self.irreplength[ir4]
         #setup 4 for-loops to create the nonzero ERI tensor blocks
         temp = np.zeros((self.irreplength[ir1] **2,  self.irreplength[ir3] **2))
-        for i, salc_i in enumerate(sparse_salcs_full[ir1]):
-            for j, salc_j in enumerate(sparse_salcs_full[ir2]):
-                for k, salc_k in enumerate(sparse_salcs_full[ir3]):
-                    for l, salc_l in enumerate(sparse_salcs_full[ir4]):
-                        if (salc_i.i == salc_j.i) and (salc_k.i == salc_l.i):
-                            #kl = len(self.orb_idx[ir3]) * salc_k.s_idx + salc_l.s_idx
-                            #checks the "column" of the irrep matrice the function belongs to, instead of indexing the i/j value
-                            #the quotient of the salc index and number of minimal # of functions 
-                            ijfactor = salc_i.s_idx // nfunx_ij
-                            ijfactor2 = salc_j.s_idx // nfunx_ij
-                            klfactor = salc_k.s_idx // nfunx_kl
-                            klfactor2 = salc_l.s_idx // nfunx_kl
-                            ij2 = self.irreplength[ir2] * (salc_i.s_idx - ijfactor)  + salc_j.s_idx - (self.irreplength[ir2] * nfunx_ij *ijfactor2) #- factor2 * self.irreplength[ir4] #+ salc_l.s_idx 
-                            kl2 = self.irreplength[ir4] * (salc_k.s_idx - klfactor)  + salc_l.s_idx - (self.irreplength[ir4] * nfunx_kl *klfactor2) #- factor2 * self.irreplength[ir4] #+ salc_l.s_idx 
-                            #function_factor = nfunx **2 * ket_degen
-                            temp[ij2,kl2] += tensor[salc_i.i_idx, salc_j.i_idx, salc_k.i_idx, salc_l.i_idx] * salc_i.element * salc_j.element * salc_k.element * salc_l.element
-        print("The temp")
-        print(temp / ket_degen)
-        return temp
+        if swap:
+            print("do stuff")
+            for i, salc_i in enumerate(sparse_salcs_full[ir1]):
+                for j, salc_j in enumerate(sparse_salcs_full[ir2]):
+                    for k, salc_k in enumerate(sparse_salcs_full[ir3]):
+                        for l, salc_l in enumerate(sparse_salcs_full[ir4]):
+                            if (salc_i.i == salc_j.i) and (salc_k.i == salc_l.i):
+                                #kl = len(self.orb_idx[ir3]) * salc_k.s_idx + salc_l.s_idx
+                                #checks the "column" of the irrep matrice the function belongs to, instead of indexing the i/j value
+                                #the quotient of the salc index and number of minimal # of functions 
+                                ijfactor = salc_i.s_idx // nfunx_ij
+                                ijfactor2 = salc_j.s_idx // nfunx_ij
+                                klfactor = salc_k.s_idx // nfunx_kl
+                                klfactor2 = salc_l.s_idx // nfunx_kl
+                                #ij2 = self.irreplength[ir2] * (salc_i.s_idx - ijfactor)  + salc_j.s_idx - (self.irreplength[ir2] * nfunx_ij *ijfactor2) #- factor2 * self.irreplength[ir4] #+ salc_l.s_idx 
+                                #kl2 = self.irreplength[ir4] * (salc_k.s_idx - klfactor)  + salc_l.s_idx - (self.irreplength[ir4] * nfunx_kl *klfactor2) #- factor2 * self.irreplength[ir4] #+ salc_l.s_idx 
+                                ij2 = ir2_fxns * (salc_i.s_idx - ijfactor)  + salc_j.s_idx - (ir2_fxns * nfunx_ij *ijfactor2) #- factor2 * self.irreplength[ir4] #+ salc_l.s_idx 
+                                kl2 = ir4_fxns * (salc_k.s_idx - klfactor)  + salc_l.s_idx - (ir4_fxns * nfunx_kl *klfactor2) #- factor2 * self.irreplength[ir4] #+ salc_l.s_idx 
+                                #function_factor = nfunx **2 * ket_degen
+                                temp[ij2,kl2] += tensor[salc_i.i_idx, salc_k.i_idx, salc_j.i_idx, salc_l.i_idx] * salc_i.element * salc_j.element * salc_k.element * salc_l.element
+        else:
+            for i, salc_i in enumerate(sparse_salcs_full[ir1]):
+                for j, salc_j in enumerate(sparse_salcs_full[ir2]):
+                    for k, salc_k in enumerate(sparse_salcs_full[ir3]):
+                        for l, salc_l in enumerate(sparse_salcs_full[ir4]):
+                            if (salc_i.i == salc_j.i) and (salc_k.i == salc_l.i):
+                                #kl = len(self.orb_idx[ir3]) * salc_k.s_idx + salc_l.s_idx
+                                #checks the "column" of the irrep matrice the function belongs to, instead of indexing the i/j value
+                                #the quotient of the salc index and number of minimal # of functions 
+                                ijfactor = salc_i.s_idx // nfunx_ij
+                                ijfactor2 = salc_j.s_idx // nfunx_ij
+                                klfactor = salc_k.s_idx // nfunx_kl
+                                klfactor2 = salc_l.s_idx // nfunx_kl
+                                #ij2 = self.irreplength[ir2] * (salc_i.s_idx - ijfactor)  + salc_j.s_idx - (self.irreplength[ir2] * nfunx_ij *ijfactor2) #- factor2 * self.irreplength[ir4] #+ salc_l.s_idx 
+                                #kl2 = self.irreplength[ir4] * (salc_k.s_idx - klfactor)  + salc_l.s_idx - (self.irreplength[ir4] * nfunx_kl *klfactor2) #- factor2 * self.irreplength[ir4] #+ salc_l.s_idx 
+                                ij2 = ir2_fxns * (salc_i.s_idx - ijfactor)  + salc_j.s_idx - (ir2_fxns * nfunx_ij *ijfactor2) #- factor2 * self.irreplength[ir4] #+ salc_l.s_idx 
+                                kl2 = ir4_fxns * (salc_k.s_idx - klfactor)  + salc_l.s_idx - (ir4_fxns * nfunx_kl *klfactor2) #- factor2 * self.irreplength[ir4] #+ salc_l.s_idx 
+                                #function_factor = nfunx **2 * ket_degen
+                                temp[ij2,kl2] += tensor[salc_i.i_idx, salc_j.i_idx, salc_k.i_idx, salc_l.i_idx] * salc_i.element * salc_j.element * salc_k.element * salc_l.element
+            #print("The temp")
+            #print(temp / ket_degen)
+        return temp /ket_degen
 
-    def sparse_degen_bra(self, block, b, bra_degen, sparse_salcs_full, tensor):
+    def sparse_degen_bra(self, block, b, bra_degen, sparse_salcs_full, tensor, swap):
         ir1, ir2, ir3, ir4 = block[0], block[1], block[2], block[3]
         #since ket degen, #self.irreplength[ir3] is the number of functions when exploiting degen
         nfunx = self.irreplength[ir1]
         #setup 4 for-loops to create the nonzero ERI tensor blocks
+        ir2_fxns = self.irreplength[ir2]
+        ir3_fxns = len(self.orb_idx[ir3])
+         
         temp = np.zeros((self.irreplength[ir1] **2,  self.irreplength[ir3] **2))
-        for i, salc_i in enumerate(sparse_salcs_full[ir1]):
-            for j, salc_j in enumerate(sparse_salcs_full[ir2]):
-                for k, salc_k in enumerate(sparse_salcs_full[ir3]):
-                    for l, salc_l in enumerate(sparse_salcs_full[ir4]):
-                        if salc_i.i == salc_j.i:
-                            kl = len(self.orb_idx[ir3]) * salc_k.s_idx + salc_l.s_idx
+        if swap:
+            print("do stuff")
+            for i, salc_i in enumerate(sparse_salcs_full[ir1]):
+                for j, salc_j in enumerate(sparse_salcs_full[ir2]):
+                    for k, salc_k in enumerate(sparse_salcs_full[ir3]):
+                        for l, salc_l in enumerate(sparse_salcs_full[ir4]):
+                            if salc_i.i == salc_j.i:
 
-                            #checks the "column" of the irrep matrice the function belongs to, instead of indexing the i/j value
-                            factor = salc_i.s_idx // nfunx
-                            factor2 = salc_j.s_idx // nfunx
-                            ij2 = self.irreplength[ir2] * (salc_i.s_idx - factor)  + salc_j.s_idx - (self.irreplength[ir2] * nfunx *factor2) #- factor2 * self.irreplength[ir4] #+ salc_l.s_idx 
-                            #the quotient of the salc index and number of minimal # of functions 
-                            factor = salc_i.s_idx // nfunx
-                            #function_factor = nfunx **2 * ket_degen
-                            temp[ij2,kl] += tensor[salc_i.i_idx, salc_j.i_idx, salc_k.i_idx, salc_l.i_idx] * salc_i.element * salc_j.element * salc_k.element * salc_l.element
+                                #checks the "column" of the irrep matrice the function belongs to, instead of indexing the i/j value
+                                factor = salc_i.s_idx // nfunx
+                                factor2 = salc_j.s_idx // nfunx
+                                
+                                #ij2 = self.irreplength[ir2] * (salc_i.s_idx - factor)  + salc_j.s_idx - (self.irreplength[ir2] * nfunx *factor2) #- factor2 * self.irreplength[ir4] #+ salc_l.s_idx 
+                                #kl = len(self.orb_idx[ir3]) * salc_k.s_idx + salc_l.s_idx
+                                
+                                ij2 = ir2_fxns * (salc_i.s_idx - factor)  + salc_j.s_idx - (ir2_fxns * nfunx *factor2) #- factor2 * self.irreplength[ir4] #+ salc_l.s_idx 
+                                kl = ir3_fxns * salc_k.s_idx + salc_l.s_idx
+                                #the quotient of the salc index and number of minimal # of functions 
+                                factor = salc_i.s_idx // nfunx
+                                #function_factor = nfunx **2 * ket_degen
+                                #temp[ij2,kl] += tensor[salc_i.i_idx, salc_j.i_idx, salc_k.i_idx, salc_l.i_idx] * salc_i.element * salc_j.element * salc_k.element * salc_l.element
+                                temp[ij2,kl] += tensor[salc_i.i_idx, salc_k.i_idx, salc_j.i_idx, salc_l.i_idx] * salc_i.element * salc_j.element * salc_k.element * salc_l.element
+        else:
+            for i, salc_i in enumerate(sparse_salcs_full[ir1]):
+                for j, salc_j in enumerate(sparse_salcs_full[ir2]):
+                    for k, salc_k in enumerate(sparse_salcs_full[ir3]):
+                        for l, salc_l in enumerate(sparse_salcs_full[ir4]):
+                            if salc_i.i == salc_j.i:
+
+                                #checks the "column" of the irrep matrice the function belongs to, instead of indexing the i/j value
+                                factor = salc_i.s_idx // nfunx
+                                factor2 = salc_j.s_idx // nfunx
+                                
+                                #ij2 = self.irreplength[ir2] * (salc_i.s_idx - factor)  + salc_j.s_idx - (self.irreplength[ir2] * nfunx *factor2) #- factor2 * self.irreplength[ir4] #+ salc_l.s_idx 
+                                #kl = len(self.orb_idx[ir3]) * salc_k.s_idx + salc_l.s_idx
+                                
+                                ij2 = ir2_fxns * (salc_i.s_idx - factor)  + salc_j.s_idx - (ir2_fxns * nfunx *factor2) #- factor2 * self.irreplength[ir4] #+ salc_l.s_idx 
+                                kl = ir3_fxns * salc_k.s_idx + salc_l.s_idx
+                                #the quotient of the salc index and number of minimal # of functions 
+                                factor = salc_i.s_idx // nfunx
+                                #function_factor = nfunx **2 * ket_degen
+                                temp[ij2,kl] += tensor[salc_i.i_idx, salc_j.i_idx, salc_k.i_idx, salc_l.i_idx] * salc_i.element * salc_j.element * salc_k.element * salc_l.element
         return temp / bra_degen
 
-    def sparse_degen_ket(self, block, b, ket_degen, sparse_salcs_full, tensor):
+    def sparse_degen_ket(self, block, b, ket_degen, sparse_salcs_full, tensor, swap):
         ir1, ir2, ir3, ir4 = block[0], block[1], block[2], block[3]
         #since ket degen, #self.irreplength[ir3] is the number of functions when exploiting degen
         nfunx = self.irreplength[ir3]
         #setup 4 for-loops to create the nonzero ERI tensor blocks
+        ir2_fxns = len(self.orb_idx[ir2])
+        ir4_fxns = self.irreplength[ir4]
         temp = np.zeros((self.irreplength[ir1] **2,  self.irreplength[ir3] **2))
-        for i, salc_i in enumerate(sparse_salcs_full[ir1]):
-            for j, salc_j in enumerate(sparse_salcs_full[ir2]):
-                for k, salc_k in enumerate(sparse_salcs_full[ir3]):
-                    for l, salc_l in enumerate(sparse_salcs_full[ir4]):
-                        if salc_k.i == salc_l.i:
-                            ij = len(self.orb_idx[ir2]) * salc_i.s_idx + salc_j.s_idx
+        if swap:
+            print("do stuff")
+            for i, salc_i in enumerate(sparse_salcs_full[ir1]):
+                for j, salc_j in enumerate(sparse_salcs_full[ir2]):
+                    for k, salc_k in enumerate(sparse_salcs_full[ir3]):
+                        for l, salc_l in enumerate(sparse_salcs_full[ir4]):
+                            if salc_k.i == salc_l.i:
 
-                            #checks the "column" of the irrep matrice the function belongs to, instead of indexing the i/j value
-                            factor = salc_k.s_idx // nfunx
-                            factor2 = salc_l.s_idx // nfunx
-                            kl2 = self.irreplength[ir4] * (salc_k.s_idx - factor)  + salc_l.s_idx - (self.irreplength[ir4] * nfunx *factor2) #- factor2 * self.irreplength[ir4] #+ salc_l.s_idx 
-                            #the quotient of the salc index and number of minimal # of functions 
-                            factor = salc_k.s_idx // nfunx
-                            #function_factor = nfunx **2 * ket_degen
-                            temp[ij,kl2] += tensor[salc_i.i_idx, salc_j.i_idx, salc_k.i_idx, salc_l.i_idx] * salc_i.element * salc_j.element * salc_k.element * salc_l.element
+                                #checks the "column" of the irrep matrice the function belongs to, instead of indexing the i/j value
+                                factor = salc_k.s_idx // nfunx
+                                factor2 = salc_l.s_idx // nfunx
+                                #ij = len(self.orb_idx[ir2]) * salc_i.s_idx + salc_j.s_idx
+                                #kl2 = self.irreplength[ir4] * (salc_k.s_idx - factor)  + salc_l.s_idx - (self.irreplength[ir4] * nfunx *factor2) #- factor2 * self.irreplength[ir4] #+ salc_l.s_idx 
+                                ij = ir2_fxns * salc_i.s_idx + salc_j.s_idx
+                                kl2 = ir4_fxns * (salc_k.s_idx - factor)  + salc_l.s_idx - (ir4_fxns * nfunx *factor2) #- factor2 * self.irreplength[ir4] #+ salc_l.s_idx 
+                                #the quotient of the salc index and number of minimal # of functions 
+                                factor = salc_k.s_idx // nfunx
+                                #function_factor = nfunx **2 * ket_degen
+                                #temp[ij,kl2] += tensor[salc_i.i_idx, salc_j.i_idx, salc_k.i_idx, salc_l.i_idx] * salc_i.element * salc_j.element * salc_k.element * salc_l.element
+                                temp[ij,kl2] += tensor[salc_i.i_idx, salc_k.i_idx, salc_j.i_idx, salc_l.i_idx] * salc_i.element * salc_j.element * salc_k.element * salc_l.element
+        else:
+            for i, salc_i in enumerate(sparse_salcs_full[ir1]):
+                for j, salc_j in enumerate(sparse_salcs_full[ir2]):
+                    for k, salc_k in enumerate(sparse_salcs_full[ir3]):
+                        for l, salc_l in enumerate(sparse_salcs_full[ir4]):
+                            if salc_k.i == salc_l.i:
+
+                                #checks the "column" of the irrep matrice the function belongs to, instead of indexing the i/j value
+                                factor = salc_k.s_idx // nfunx
+                                factor2 = salc_l.s_idx // nfunx
+                                #ij = len(self.orb_idx[ir2]) * salc_i.s_idx + salc_j.s_idx
+                                #kl2 = self.irreplength[ir4] * (salc_k.s_idx - factor)  + salc_l.s_idx - (self.irreplength[ir4] * nfunx *factor2) #- factor2 * self.irreplength[ir4] #+ salc_l.s_idx 
+                                ij = ir2_fxns * salc_i.s_idx + salc_j.s_idx
+                                kl2 = ir4_fxns * (salc_k.s_idx - factor)  + salc_l.s_idx - (ir4_fxns * nfunx *factor2) #- factor2 * self.irreplength[ir4] #+ salc_l.s_idx 
+                                #the quotient of the salc index and number of minimal # of functions 
+                                factor = salc_k.s_idx // nfunx
+                                #function_factor = nfunx **2 * ket_degen
+                                temp[ij,kl2] += tensor[salc_i.i_idx, salc_j.i_idx, salc_k.i_idx, salc_l.i_idx] * salc_i.element * salc_j.element * salc_k.element * salc_l.element
         return temp / ket_degen
 
     def nonzero_tiles(self):
