@@ -18,7 +18,6 @@ class DIIS_Manager():
         self.symtext = symtext
         self.ctab = symtext.character_table
         self.diis = DIIS_HISTORY(None, None, [], [])
-        #print(self.diis)
 
     def do_diis(self, F, D, S, A, i):
         #create full mat from bdmat
@@ -39,7 +38,7 @@ class DIIS_Manager():
         self.A = A.full_mat()
         error = np.einsum('ij, jk, kl->il', self.F, self.D, self.S) - np.einsum('ij, jk, kl->il', self.S, self.D, self.F)
         error = self.A.dot(error).dot(self.A)
-
+        self.error = error 
         self.diis.iteration = i
         self.diis.error_hist.append(error)
         self.diis.fock_hist.append(self.F)

@@ -52,6 +52,17 @@ class BDMatrix():
             else:
                 suum += sum(sum(block))
         return suum
+    def qr(self):
+        Q = []
+        R = []
+        for i, block in enumerate(self.blocks):
+            if block.size == 0:
+                Q.append(block)
+            else:
+                q, r = np.linalg.qr(block)
+                Q.append(q)
+                R.append(r)
+        return BDMatrix(Q), BDMatrix(R)
 
     def dot(self, A):
         if self.check_size(A):
@@ -65,10 +76,16 @@ class BDMatrix():
                     B.append(np.dot(block, A.blocks[i]))
         return BDMatrix(B)
 
-    def transpose(self):
+    def transpose(self, args = None):
         B = []
         for i, block in enumerate(self.blocks):
-            B.append(block.transpose())
+            if block.size == 0:
+                B.append(block)
+            else:
+                if args == None:
+                    B.append(block.transpose())
+                else:
+                    B.append(block.transpose(*args))
         return BDMatrix(B)
     
     def eigh(self):
@@ -134,6 +151,7 @@ class BDMatrix():
             fullmat[c:c+s, c:c+s] = block
             c += s
         return fullmat
+
     def full_to_bd(self, irreplength):
         B = []
         offset = 0
@@ -144,9 +162,119 @@ class BDMatrix():
                 B.append(self[offset:offset + il, offset:offset + il])
             offset += il
         return BDMatrix(B)
+    
+    def furtherv2(self, s, Orbs_h):
+        stuff = []
+        for s_i in s:
+            if s_i == "":
+                stuff.append(None)
+            else:
+                stuff.append(getattr(Orbs_h, s_i))
+        stuff.append(None)
+        return stuff
+
+    def further(self, s, Orbs):
+        stuff = []
+        for s_i in s:
+            if s_i == "":
+                stuff.append(None)
+            else:
+                stuff.append(getattr(Orbs[0], s_i))
+        stuff.append(None)
+        return stuff
+
+    def process_string(self, string_slice, Orbs):
+        trials = []
+        #loop over each index k 
+        for i, string in enumerate(string_slice):
+            #split the string so we know the beginning and end point of each slice
+            s = string.split(":")
+            trials.append(slice(*self.further(s, Orbs)))
+        return tuple(trials)
+    
+    def process_stringv2(self, string_slice, Orbs_h):
+        trials = []
+        #loop over each index k 
+        for i, string in enumerate(string_slice):
+            #split the string so we know the beginning and end point of each slice
+            s = string.split(":")
+            trials.append(slice(*self.furtherv2(s, Orbs_h)))
+        return tuple(trials)
+
+    def inv(self):
+        B = []
+        for i, block in enumerate(self.blocks):
+            if block.size == 0:
+                B.append(block)
+            else:
+                B.append(np.linalg.inv(block))
+        return BDMatrix(B)
+
+    def slicev2(self, in_slice, Orbs, mat = None):
+        #p_string = self.process_string(in_slice, Orbs)
+        B = []
+        #    raise ValueError("This function only works for one irrep, c1 symmetry")
+        for h, block in enumerate(self.blocks):
+            if len(self.blocks[h]) == 0:
+                B.append(np.array([]))
+            else:
+                p_string = self.process_stringv2(in_slice, Orbs[h])
+                if mat != None:
+                    self.blocks[h][p_string] = mat.blocks[h]
+                    B.append(self.blocks[h][p_string])
+                else:
+                    B.append(self.blocks[h][p_string])
+        return BDMatrix(B)
+
+    def slice(self, in_slice, Orbs, mat = None):
+        p_string = self.process_string(in_slice, Orbs)
+        B = []
+        if len(self.blocks) > 1:
+            raise ValueError("This function only works for one irrep, c1 symmetry")
+        for h, block in enumerate(self.blocks):
+            if len(self.blocks[h]) == 0:
+                B.append(np.array([]))
+            else:
+                if mat != None:
+                    self.blocks[0][p_string] = mat.blocks[h]
+                    B.append(self.blocks[0][idk_wut])
+                else:
+                    B.append(self.blocks[0][idk_wut])
+        return BDMatrix(B)
+
+    def einsum(self, string, *stuff):
+        #check if *stuff are BDMatrix objects
+        if any(isinstance(st, BDMatrix) == False for st in stuff):
+            raise ValueError("BDMatrix.einsum() only works with BDMatrix *args objects")
+        else:
+            B = []
+            for h, block in enumerate(self.blocks):
+                if len(self.blocks[h]) == 0:
+                    B.append(np.array([]))
+                else:
+                    idk = [stuff[i].blocks[h] for i in range(len(stuff))]
+                    B.append(np.einsum(string, *[stuff[i].blocks[h] for i in range(len(stuff))]))
+        return BDMatrix(B)
+
+    def reshape(self, *args):
+        B = []
+        for h, block in enumerate(self.blocks):
+            if len(self.blocks[h]) == 0:
+                B.append(np.array([]))
+            else:
+                B.append(block.reshape(*args[h]))
+        return BDMatrix(B)
+     
+    def swapaxes(self, *args):
+        B = []
+        for h, block in enumerate(self.blocks):
+            if len(self.blocks[h]) == 0:
+                B.append(np.array([]))
+            else:
+                B.append(block.swapaxes(*args))
+        return BDMatrix(B)
 
 if __name__ == "__main__":
-    #print('lol where are we')
     A = np.array([[1,2],[3,4]])
     B = np.array([[1,2,3],[4,5,6],[7,8,9]])
     C = np.array([1])

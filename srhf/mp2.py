@@ -3,16 +3,22 @@ import psi4
 from bdmats import BDMatrix
 import time
 from scipy.linalg import block_diag
+"""
+Just testing some things, realizing I need a more integral handling/tensor transformation routines
+Coded up for sto-3g water only, because once it works for that system, every other test case is error free
+"""
+
 
 class MP2():
-    def __init__(self, mymol, options, so_orbitals, ERI):
+    def __init__(self, mymol, options, so_orbitals, ERI, repacked_bigERI):
         self.options = options
         self.molecule = mymol
         self.so_orbitals = so_orbitals
         self.ERI = ERI
+        self.repacked_bigERI = repacked_bigERI
     
     def run_symm_block(self):
-        print("We doing MP2 now bruv, in the block-symmetrized basis")
+        print("MP2 in the block-symmetrized basis")
         C = self.so_orbitals.C 
         occ_C = C.slicev2([":", ":ndocc_ir"], self.so_orbitals.Orbs)
         virt_C = C.slicev2([":", "ndocc_ir:"], self.so_orbitals.Orbs)
@@ -32,7 +38,7 @@ class MP2():
         Eocc = np.concatenate(occ, axis=None).ravel()
         Evirt = np.concatenate(virt, axis=None).ravel()
         E_2 = 0
-        for i in range(5):   # Nested loop represents all possible double excitations
+        for i in range(5):  
                 for j in range(5): 
                         for a in range(2):
                                 for b in range(2):
@@ -40,7 +46,7 @@ class MP2():
         return E_2   # Total MP2 Correlation Energy
     
     def run_symm(self):
-        print("We doing MP2 now bruv, in the symmetrized basis")
+        print("MP2 in the symmetrized basis")
         C = self.so_orbitals.C 
         occ_C = C.slicev2([":", ":ndocc_ir"], self.so_orbitals.Orbs)
         virt_C = C.slicev2([":", "ndocc_ir:"], self.so_orbitals.Orbs)
@@ -60,7 +66,7 @@ class MP2():
         Eocc = np.concatenate(occ, axis=None).ravel()
         Evirt = np.concatenate(virt, axis=None).ravel()
         E_2 = 0
-        for i in range(5):   # Nested loop represents all possible double excitations
+        for i in range(5):  
                 for j in range(5): 
                         for a in range(2):
                                 for b in range(2):
@@ -68,7 +74,7 @@ class MP2():
         return E_2   # Total MP2 Correlation Energy
 
     def run(self):
-        print("We doing MP2 now bruv")
+        print("MP2, c1 symmetry only")
         C = self.so_orbitals.C 
         occ_C = C.slicev2([":", ":ndocc_ir"], self.so_orbitals.Orbs)
         virt_C = C.slicev2([":", "ndocc_ir:"], self.so_orbitals.Orbs)
@@ -81,12 +87,8 @@ class MP2():
         print(self.so_orbitals.eps)
         Eocc = self.so_orbitals.eps[0][:5]
         Evirt = self.so_orbitals.eps[0][5:]
-        print("EOCC")
-        print(Eocc)
-        print("EVIRT")
-        print(Evirt)
         E_2 = 0
-        for i in range(5):   # Nested loop represents all possible double excitations
+        for i in range(5): 
                 for j in range(5): 
                         for a in range(2):
                                 for b in range(2):
@@ -98,7 +100,7 @@ class MP2():
         Eocc = self.energies[:self.nocc]   # Orbital energies of occupied orbitals
         Evir = self.energies[self.nocc:]   # Orbital energies of virtual orbitals
         E_2 = 0
-        for i in range(self.nocc):   # Nested loop represents all possible double excitations
+        for i in range(self.nocc): 
                 for j in range(self.nocc): 
                         for a in range(self.nvir):
                                 for b in range(self.nvir):

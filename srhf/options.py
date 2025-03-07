@@ -25,5 +25,10 @@ class Options(object):
         
         #Ints source
         self.intsdpd = kwargs.pop("intsdpd", True)
+        self.sparse_transform = kwargs.pop("sparse_transform", True)
 
+        #Second Order Convergence
+        self.second_order = kwargs.pop("second_order", False)
 
+        #Post HF
+        self.mp2 = kwargs.pop("mp2", False)

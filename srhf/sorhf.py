@@ -18,13 +18,11 @@ from srhf_helper import DPD
 #from so_ints import SO_Ints 
 #from mo_transform import MO_Trans
 
-#np.set_printoptions(threshold=sys.maxsize, linewidth=12000, precision=10)
 np.set_printoptions(precision=5, linewidth=200, suppress=True)
 
 
-class SRHF():
+class SO_RHF():
     def __init__(self, mymol, basis_input, options):
-        print("Nothing to init!!")
         self.molecule = psi4.geometry(mymol)
         self.molecule.update_geometry()
         self.basis_input = basis_input
@@ -64,9 +62,7 @@ class SRHF():
         
         #align salcs to maximally block-diagonalize our operators
         self.salcs.sort_to('blocks')
-        print(dir(self.salcs))
-        print(self.salcs.salcs_by_irrep)
-        #print(stop)
+        
         #not sure why I've created this object. Perhaps recent MolSym updates have made this obsolete. 
         self.salcs.salc_sets = []
         fxn_list = []
@@ -82,7 +78,7 @@ class SRHF():
         #Going to pass in a fake fxn_list argument for now, see if I can replace it later on...
         so_orbitals = SOrbitals(self.symtext, self.salcs, self.ndocc, self.options, self.nbfxns, fxn_list, self.basis)
         #so_orbitals.process_salcs()
-        #print(so_orbitals.irreplength)
+        
         iter_type = "DIAG"
         D_i, docc_vector = self.build_D(so_orbitals)
         ERI = ints.ao_eri().np
@@ -90,32 +86,14 @@ class SRHF():
         before = time.time()
         self.dpd = DPD(self.salcs.salcs_by_irrep, self.symtext, self.salcs, so_orbitals, D_i, self.options)
         #repacked_bigERI_swapped = self.dpd.trial_swap
-        if self.options.sparse_transform:
-            repacked_bigERI = self.dpd.sparse_ERI_transform(ERI, swap = False)
-            repacked_bigERI_swapped = self.dpd.sparse_ERI_transform(ERI, swap = True)
-        else:
-            bigERI = self.aotoso_2(ERI)
-            #test_bigERI = so_orbitals.sparse_fourD_transform(ERI)
-            print("The big ERI")
-            print(bigERI)
-            self.dpd.lookup_hf_ERI(bigERI)
-            #twod pre J
-            #test the new functionality first, remember default is to use the sparse transform
-            test_repacked_bigERI = self.dpd.sparse_ERI_transform(ERI, swap = False)
-            repacked_bigERI = self.dpd.twod_tensor
-            for r, re in enumerate(repacked_bigERI):
-                print(re - test_repacked_bigERI[r])
-            #twod pre K
-            ERI_swapped = np.swapaxes(bigERI, 1, 2)
-            self.dpd.lookup_hf_ERI(ERI_swapped)
-            repacked_bigERI_swapped = self.dpd.twod_tensor
-            print("first block of repak swap")
-            print(repacked_bigERI_swapped[0])
-            #test_repacked_bigERI_swapped = self.dpd.sparse_ERI_transform(np.swapaxes(ERI, 1, 2), swap = False)
-            test_repacked_bigERI_swapped = self.dpd.sparse_ERI_transform(ERI, swap = True)
-            for r, re in enumerate(repacked_bigERI_swapped):
-                print(re - test_repacked_bigERI_swapped[r])
-            print(stop)
+        bigERI = self.aotoso_2(ERI)
+        self.dpd.lookup_hf_ERI(bigERI)
+        #twod pre J
+        repacked_bigERI = self.dpd.twod_tensor
+        #twod pre K
+        ERI_swapped = np.swapaxes(bigERI, 1, 2)
+        self.dpd.lookup_hf_ERI(ERI_swapped)
+        repacked_bigERI_swapped = self.dpd.twod_tensor
         now = time.time()
         print(f"Finished repack {now - before:6.3f}")
         print("Starting SCF Iterations")
@@ -133,38 +111,76 @@ class SRHF():
                 dRMS = diis_m.diis.dRMS 
             print(f"Iter {i:>3} SCF energy {E_new:>.10f} Delta(E) {E_new - E_i:^+.10f} RMS(D) {dRMS} {docc_vector} {iter_type} took {now - before:.7f} seconds")
             if (abs(E_new - E_i) < self.options.e_convergence) and (dRMS < self.options.d_convergence):
-                self.so_orbitals = so_orbitals
-                #This won't work if using the sparse transform for now... need ERI transform for post-hf
-                self.ERI = bigERI
-                self.so_orbitals.C = C
-                self.so_orbitals.eps = eps
-                self.wfn_energy = E_new
+                print(stop)
                 break
             E_i = E_new
-            #print(f"The density {D_i}")
-            #print(f"The diis error {diis_m.error}")
-            F = diis_m.create_b()
-            #print(f"Inside diag? The F is {F}")
-            Fs = so_orbitals.A.transpose().dot(F.dot(so_orbitals.A))
-            eps, Cs = Fs.eigh()
-            C = so_orbitals.A.dot(Cs)
-            so_orbitals.C = C
-            D_new, docc_vector = self.build_D(so_orbitals)
-            D_i = D_new
-            iter_type = "DIIS"
+            if np.any(diis_m.error > 0.1):
+                F = diis_m.create_b()
+                Fs = so_orbitals.A.transpose().dot(F.dot(so_orbitals.A))
+                eps, Cs = Fs.eigh()
+                C = so_orbitals.A.dot(Cs)
+                so_orbitals.C = C
+                D_new, docc_vector = self.build_D(so_orbitals)
+                D_i = D_new
+                iter_type = "DIIS"
+            else:
                 
+                moF = F.einsum('ui,vj,uv', C, C, F)
+                gn = -4 * moF.slicev2([":ndocc_ir", "ndocc_ir:"], so_orbitals.Orbs)
+                occ_C = C.slicev2([":", ":ndocc_ir"], so_orbitals.Orbs)
+                I = BDMatrix.full_to_bd(ERI, so_orbitals.irreplength)
+                MO = I.einsum("PQRS,Pp,Qq,Rr,Ss", I, occ_C, C, C, C)
+
+                eye_diag_occ = BDMatrix([np.diag(np.ones(so_orbitals.Orbs[0].ndocc_ir))])
+                eye_diag_virt = BDMatrix([np.diag(np.ones(so_orbitals.Orbs[0].nvirt_ir))])
+
+                Biajb = moF.einsum('ab,ij->iajb', moF.slice(["ndocc_ir:", "ndocc_ir:"], so_orbitals.Orbs), eye_diag_occ)
+                Biajb -= moF.einsum('ij,ab->iajb', moF.slice([":ndocc_ir", ":ndocc_ir"], so_orbitals.Orbs), eye_diag_virt)
+                Biajb += 4 * MO.slice([":", "ndocc_ir:", ":ndocc_ir", "ndocc_ir:"], so_orbitals.Orbs)
+                Biajb -= MO.slice([":", "ndocc_ir:", ":ndocc_ir", "ndocc_ir:"], so_orbitals.Orbs).swapaxes(0, 2)
+                Biajb -= MO.slice([":", ":ndocc_ir", "ndocc_ir:", "ndocc_ir:"], so_orbitals.Orbs).swapaxes(1, 2)
+                Biajb *= 4
+
+                oXv_idx = []                
+                ovov_idx = []                
+                for o, orb in enumerate(so_orbitals.Orbs):
+                    oXv_idx.append([orb.ndocc_ir * orb.nvirt_ir, -1])
+                    ovov_idx.append([orb.ndocc_ir, orb.nvirt_ir, orb.ndocc_ir, orb.nvirt_ir])
+
+
+                # Invert B, (o^3 v^3); solves Newton equations H*x = B
+                Binv = BDMatrix.inv(Biajb.reshape(oXv_idx)).reshape(ovov_idx)
+
+                x = Binv.einsum('iajb,ia->jb', Binv, gn)
+                U = []
+                for h, Cirrep in enumerate(C.blocks):
+                    if len(Cirrep) == 0:
+                        U.append(np.array([])) 
+                    else:
+                        U.append(np.zeros(Cirrep.shape))
+                U = BDMatrix(U)
+                
+                U.slice([":ndocc_ir", "ndocc_ir:"], so_orbitals.Orbs, x)
+                U.slice(["ndocc_ir:", ":ndocc_ir"], so_orbitals.Orbs, -1*x.transpose())
+                U += 0.5 * U.dot(U)
+                for ui, u in enumerate(U.blocks):
+                    if len(u) == 0:
+                        pass
+                    else:
+                        U.blocks[ui][np.diag_indices_from(so_orbitals.A.blocks[ui])] += 1
+                U, r = (U.transpose()).qr()
+                C = C.dot(U)
+                iter_type = 'SOSCF'
+                so_orbitals.C = C
+                D_new, docc_vector = self.build_D(so_orbitals)
+                D_i = D_new
 
     def create_slices(self, slice_args, Orbs):
         #for now, Orbs only supports ndocc_irrep objects
-        #TODO add support for nvirt_irrep as well
-        #print(f"The slice args {slice_args}")
         trials = []
-        #tup = ()
         for i, s_arg in enumerate(slice_args):
-            #print(f"i = {i}, s_arg = {s_arg}")
             try:
                 test = []
-                #trial = [s if s is None else int(getattr(Orbs[0], s)) for s in s_arg]
                 for x in s_arg:
                     if x is not None:
                         test.append(getattr(Orbs[0], x))
@@ -174,15 +190,13 @@ class SRHF():
                 trials.append(test_s)
             except:
                 raise ValueError(f"It is possible that of the slice arguments within {s_arg} is not a valid attribute of the Orbs object or is not None")
-        #print(f"The trials {trials}")
-        #print(stop)
         return tuple(trials)
+
     def degen_rhf_energy(self, D, H, F, SOrbs):
         """
         Calculate HF energy
         """
         if isinstance(D, BDMatrix):
-            #print("are we bd?")
             E = 0
             for h, d in enumerate(D.blocks):
                 if len(D.blocks[h]) == 0:
@@ -199,6 +213,7 @@ class SRHF():
         else:
             E = sum(sum(np.multiply(D,(H+F))))
         return E
+
     def build_fock_blocky_sym(self, H, Dp, repacked_bigERI, repacked_bigERI_swapped):
         start = time.time()
         #broadcast h d and f to oned. fock should really be the only one packed and unpacked each time, could be fed into this function
@@ -241,7 +256,6 @@ class SRHF():
         if braket == 2:
             degen = self.symtext.irreps[block[3]].d
             #degen = self.symtext.chartable.irrep_dims[self.salcs.irreps[block[3]]]
-            #print(f"The degen is {degen}") 
             j = degen * np.einsum('pr,r->p', ERI, d)
             k = degen * np.einsum('pr,r->p', ERI_swap, d)
         else:
@@ -289,18 +303,14 @@ class SRHF():
         return twod_mat
         
     def build_D(self, SOrbs):
-        #print("Inside Build D")
         docc_vector = []
         blocks = []
         for h, Cirrep in enumerate(SOrbs.C.blocks):
-            #print("hopefully we aren't building with the wrong C")
-            #print(Cirrep)
             if self.options.docc is not None:
                 nir = self.options.docc[h]
             else:
                 nir = SOrbs.Orbs[h].ndocc_ir
             docc_vector.append(nir)
-            #print(f"{h} {nir}")
             if len(Cirrep) == 0:
                 blocks.append(np.array([])) 
             elif nir == 0:
@@ -317,7 +327,6 @@ class SRHF():
         self.salcs = ProjectionOp(self.symtext, coords)
         
         for s, salc in enumerate(self.salcs_fg):
-            #print(f"s salc {s} {salc} {self.salcs_fg.salcs[s]}")
             if s < (len(self.salcs.salcs)):
                 self.salcs.salcs[s].coeffs = self.salcs_fg.salcs[s].coeffs
     
@@ -358,7 +367,6 @@ class SRHF():
         """
         first = True
         for i, salc in enumerate(self.salcs.salc_sets):
-            print(f"{i} {salc}")
             if first:
                 s = salc.T
                 first = False
