@@ -47,6 +47,7 @@ class SRHF():
         ints = psi4.core.MintsHelper(self.basis)
           
         bset, nbas_vec = self.get_basis()
+        print(f"The bset and nbas_vec {bset} {nbas_vec}")
         #bset, nbas_vec = get_basis(molecule, basis)
         coords = SphericalHarmonics(self.symtext, bset)
         
@@ -78,11 +79,15 @@ class SRHF():
 
         #Initialize the orbitals in the helper object. Take the initial guess. GWH and Core guesses are implemented.
         #Going to pass in a fake fxn_list argument for now, see if I can replace it later on...
-        so_orbitals = SOrbitals(self.symtext, self.salcs, self.ndocc, self.options, self.nbfxns, fxn_list, self.basis)
+        so_orbitals = SOrbitals(self.symtext, self.salcs, self.ndocc, self.options, self.nbfxns, fxn_list, self.basis, self.molecule, self.basis_input, bset)
         #so_orbitals.process_salcs()
-        #print(so_orbitals.irreplength)
         iter_type = "DIAG"
-        D_i, docc_vector = self.build_D(so_orbitals)
+        if self.options.guess == 'sad':
+            D_i, docc_vector = so_orbitals.D, None
+        else:
+            D_i, docc_vector = self.build_D(so_orbitals)
+        print(f"The density")
+        print(D_i)
         ERI = ints.ao_eri().np
         print("Repacking and symmetry blocking ERI")
         before = time.time()
@@ -105,6 +110,20 @@ class SRHF():
             now = time.time()
             print(f"Finished repack {now - before:6.3f}")
         #print(f"Finished repack {now - before:6.3f}")
+        if self.options.guess == "sad":
+            j, k = self.get_vhf(D_i, repacked_bigERI, repacked_bigERI_swapped)
+            vhf = j - k * 0.5
+            e = self.alt_degen_rhf_energy(D_i, so_orbitals.H, vhf, so_orbitals) + self.enuc
+            print(f"The initial SCF energy via SAD {e}")
+            F = vhf + so_orbitals.H
+            Fs = so_orbitals.A.transpose().dot(F.dot(so_orbitals.A))
+            eps, Cs = Fs.eigh()
+            C = so_orbitals.A.dot(Cs)
+            if so_orbitals.Orbs[0].ndocc_ir == None:
+                so_orbitals.ndocc_irrep(C, eps)
+            so_orbitals.C = C
+            D_new, docc_vector = self.build_D(so_orbitals)
+            D_i = D_new
         print("Starting SCF Iterations")
         print("Initiating DIIS Manager")
         diis_m = DIIS_Manager(self.symtext)
@@ -116,8 +135,7 @@ class SRHF():
             F, ftime = self.build_fock_blocky_sym(so_orbitals.H, D_i, repacked_bigERI, repacked_bigERI_swapped)
             diis_m.do_diis(F, D_i, so_orbitals.S, so_orbitals.A, i)
             E_new = self.degen_rhf_energy(D_i, so_orbitals.H, F, so_orbitals) + self.enuc
-            if self.options.diis:
-                dRMS = diis_m.diis.dRMS 
+            dRMS = diis_m.diis.dRMS
             print(f"Iter {i:>3} SCF energy {E_new:>.10f} Delta(E) {E_new - E_i:^+.10f} RMS(D) {dRMS} {docc_vector} {iter_type} took {now - before:.7f} seconds")
             if (abs(E_new - E_i) < self.options.e_convergence) and (dRMS < self.options.d_convergence):
                 self.so_orbitals = so_orbitals
@@ -129,9 +147,11 @@ class SRHF():
                 self.wfn_energy = E_new
                 break
             E_i = E_new
-            F = diis_m.create_b()
+            if self.options.diis:
+                F = diis_m.create_b()
             Fs = so_orbitals.A.transpose().dot(F.dot(so_orbitals.A))
             eps, Cs = Fs.eigh()
+
             C = so_orbitals.A.dot(Cs)
             so_orbitals.C = C
             D_new, docc_vector = self.build_D(so_orbitals)
@@ -155,6 +175,36 @@ class SRHF():
             except:
                 raise ValueError(f"It is possible that of the slice arguments within {s_arg} is not a valid attribute of the Orbs object or is not None")
         return tuple(trials)
+    
+    #def alt_degen_rhf_energy(self, D, H, F, vhf, SOrbs):
+    def alt_degen_rhf_energy(self, D, H, vhf, SOrbs):
+        """
+        Calculate HF energy
+        """
+        if isinstance(D, BDMatrix):
+            #print("are we bd?")
+            E = 0
+            for h, d in enumerate(D.blocks):
+                if len(D.blocks[h]) == 0:
+                    continue
+                else:
+                    if self.options.exploit_degen:
+                        degen = SOrbs.Orbs[h].degen
+                        e = np.einsum('ij,ji->',H.blocks[h],D.blocks[h])
+                        e_coul = np.einsum('ij,ji->',vhf.blocks[h],D.blocks[h]) * .5
+                        E += e #*sum(sum(np.multiply(D.blocks[h],(H.blocks[h]+F.blocks[h]))))
+                        E += e_coul #*sum(sum(np.multiply(D.blocks[h],(H.blocks[h]+F.blocks[h]))))
+                        E *= degen
+                    else:
+                        e = np.einsum('ij,ji->',H.blocks[h],D.blocks[h])
+                        e_coul = np.einsum('ij,ji->',vhf.blocks[h],D.blocks[h]) * .5
+                        E += e #*sum(sum(np.multiply(D.blocks[h],(H.blocks[h]+F.blocks[h]))))
+                        E += e_coul #*sum(sum(np.multiply(D.blocks[h],(H.blocks[h]+F.blocks[h]))))
+
+        else:
+            E = sum(sum(np.multiply(D,(H+F))))
+        return E
+
     def degen_rhf_energy(self, D, H, F, SOrbs):
         """
         Calculate HF energy
@@ -182,9 +232,44 @@ class SRHF():
         #broadcast h d and f to oned. fock should really be the only one packed and unpacked each time, could be fed into this function
         before = time.time()
         oned_h, oned_f, oned_d = self.build_d_h_f(Dp, H)
+        
         now = time.time() 
         fstart = time.time()
         jktime_total = 0
+        j_temp, k_temp = [], [] #created for demo purposes only
+        for b, block in enumerate(self.dpd.nonzero_blocks):
+            #f_sym and d_sym are the irrep of mu and sigma, respectively
+            f_sym, d_sym = block[0], block[3]
+            #index h and d of the proper symmetry to form fock and contract with eri, respectively
+            oned_h_s, oned_d_s = oned_h[f_sym], oned_d[d_sym]
+            #form j and k 
+            jkstart = time.time()
+            j, k = self.jk(repacked_bigERI[b], repacked_bigERI_swapped[b], oned_d_s, self.dpd.braket[b], block)
+            jkfinish = time.time()
+            jktime_total += (jkfinish - jkstart)
+            #print(f"jk time took {jkfinish - jkstart:6.5f} seconds for block {self.tensor_sym_string(block, symtext)} {repacked_bigERI[b].shape}")
+            #construct fock
+            oned_f[f_sym] += 2*j - k
+        
+        ffinish = time.time()
+        #print(f"Fock loop time took {ffinish - fstart:6.5f} seconds, {jktime_total:6.5f} seconds for jk")
+        F = BDMatrix(self.repack_fock(oned_f, oned_h))
+        finish = time.time()
+        #print(f"Total fock build time took {finish - start:6.8f} seconds")
+        #print(F.blocks[0] + H.blocks[0])
+        #return F, BDMatrix(vhf), finish - start
+        return F, finish - start
+
+    def get_fock(self, H, Dp, repacked_bigERI, repacked_bigERI_swapped):
+        start = time.time()
+        #broadcast h d and f to oned. fock should really be the only one packed and unpacked each time, could be fed into this function
+        before = time.time()
+        oned_h, oned_f, oned_d = self.build_d_h_f(Dp, H)
+        
+        now = time.time() 
+        fstart = time.time()
+        jktime_total = 0
+        j_temp, k_temp = [], [] #created for demo purposes only
         for b, block in enumerate(self.dpd.nonzero_blocks):
             #f_sym and d_sym are the irrep of mu and sigma, respectively
             f_sym, d_sym = block[0], block[3]
@@ -198,12 +283,40 @@ class SRHF():
             #print(f"jk time took {jkfinish - jkstart:6.5f} seconds for block {self.tensor_sym_string(block, symtext)} {repacked_bigERI[b].shape}")
             #construct fock
             oned_f[f_sym] += 2 * j - k
+            j_temp.append(self.oned_twod(j)) #created for demo purposes only
+            k_temp.append(self.oned_twod(k)) #created for demo purposes only
         ffinish = time.time()
-        #print(f"Fock loop time took {ffinish - fstart:6.5f} seconds, {jktime_total:6.5f} seconds for jk")
         F = BDMatrix(self.repack_fock(oned_f, oned_h))
         finish = time.time()
-        #print(f"Total fock build time took {finish - start:6.8f} seconds")
         return F, finish - start
+    
+    def get_vhf(self, D, repacked_bigERI, repacked_bigERI_swapped):
+        #broadcast h d and f to oned. fock should really be the only one packed and unpacked each time, could be fed into this function
+        j_temp, k_temp = [], [] #created for demo purposes only
+        oned_d = []
+        for d, dm in enumerate(D.blocks):
+            if len(dm) == 0:
+                oned_d.append(np.array([]))
+                j_temp.append(np.array([]))
+                k_temp.append(np.array([]))
+            else:
+                oned_d.append(self.twod_oned(dm))
+                j_temp.append(np.zeros_like(dm))
+                k_temp.append(np.zeros_like(dm))
+
+        for b, block in enumerate(self.dpd.nonzero_blocks):
+            #f_sym and d_sym are the irrep of mu and sigma, respectively
+            d_sym = block[3]
+            f_sym = block[0]
+            #index h and d of the proper symmetry to form fock and contract with eri, respectively
+            oned_d_s = oned_d[d_sym]
+            #form j and k 
+            j, k = self.jk(repacked_bigERI[b], repacked_bigERI_swapped[b], oned_d_s, self.dpd.braket[b], block)
+            j_temp[f_sym] = self.oned_twod(j) #created for demo purposes only
+            k_temp[f_sym] = self.oned_twod(k) #created for demo purposes only
+            #j_temp.append(self.oned_twod(j)) #created for demo purposes only
+            #k_temp.append(self.oned_twod(k)) #created for demo purposes only
+        return BDMatrix(j_temp), BDMatrix(k_temp)
     
     def repack_fock(self, oned_f, oned_h):
         F = []

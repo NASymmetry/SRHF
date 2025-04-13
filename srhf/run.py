@@ -169,31 +169,6 @@ C        3.8042086370     -1.4530783990      0.0000000000
 C       -3.8042086370     -1.4530783990      0.0000000000                 
 """
 
-mymol = """
-  noreorient
-  0 1
-  units angstrom
-H   0.63147573   0.45879397   0.14907120
-H   0.39027346   0.28355027   0.63147573
-H   0.63147573   -0.45879397   0.14907120
-H   0.39027346   -0.28355027   0.63147573
-H   0.78054693   -0.00000000   -0.14907120
-H   -0.24120227   0.74234424   0.14907120
-H   -0.14907120   0.45879397   0.63147573
-H   0.24120227   0.74234424   -0.14907120
-H   -0.78054693   0.00000000   0.14907120
-H   -0.48240453   0.00000000   0.63147573
-H   -0.63147573   0.45879397   -0.14907120
-H   -0.24120227   -0.74234424   0.14907120
-H   -0.14907120   -0.45879397   0.63147573
-H   -0.63147573   -0.45879397   -0.14907120
-H   0.24120227   -0.74234424   -0.14907120
-H   0.14907120   0.45879397   -0.63147573
-H   0.48240453   -0.00000000   -0.63147573
-H   -0.39027346   0.28355027   -0.63147573
-H   -0.39027346   -0.28355027   -0.63147573
-H   0.14907120   -0.45879397   -0.63147573
-"""
 #basis = "sto-3g"
 
 #mymol = """
@@ -343,12 +318,45 @@ mymol = """
   noreorient
   0 1
   units bohr
+C 0 0 0
+O 0 0 1.2
+"""
+mymol = """
+  noreorient
+  0 1
+  units bohr
 O       0.00000000     0.00000000     0.12820053
 H      -0.00000000    -1.47972477    -1.01731828
 H       0.00000000     1.47972477    -1.01731828
 """
+mymol = """
+  noreorient
+  0 1
+  units angstrom
+H   0.63147573   0.45879397   0.14907120
+H   0.39027346   0.28355027   0.63147573
+H   0.63147573   -0.45879397   0.14907120
+H   0.39027346   -0.28355027   0.63147573
+H   0.78054693   -0.00000000   -0.14907120
+H   -0.24120227   0.74234424   0.14907120
+H   -0.14907120   0.45879397   0.63147573
+H   0.24120227   0.74234424   -0.14907120
+H   -0.78054693   0.00000000   0.14907120
+H   -0.48240453   0.00000000   0.63147573
+H   -0.63147573   0.45879397   -0.14907120
+H   -0.24120227   -0.74234424   0.14907120
+H   -0.14907120   -0.45879397   0.63147573
+H   -0.63147573   -0.45879397   -0.14907120
+H   0.24120227   -0.74234424   -0.14907120
+H   0.14907120   0.45879397   -0.63147573
+H   0.48240453   -0.00000000   -0.63147573
+H   -0.39027346   0.28355027   -0.63147573
+H   -0.39027346   -0.28355027   -0.63147573
+H   0.14907120   -0.45879397   -0.63147573
+"""
 
 basis = "sto-3g"
+#basis = "cc-pvdz"
 
 options_kwargs = {
         "subgroup" : "C1",
@@ -357,17 +365,19 @@ options_kwargs = {
         "exploit_degen" : True,
         #"exploit_degen" : False,
         "guess" : "core",
+        #"guess" : "sad",
         "benchmark" : False,
         "intsdpd": False,
         "e_convergence": 1e-10,
         "d_convergence": 1e-10,
         "compare_psi" : True,
         "diis": True,
-        "scf_max_iter" : 15,
+        #"diis": False,
+        "scf_max_iter" : 50,
         #"fg_as_c1" : True,
         #"docc" : [1, 0, 0, 0, 1, 0, 0, 0, 0, 0],
         #"second_order" : True,
-        "mp2" : True,
+        "mp2" : False,
         "sparse_transform" : False,
         }
 options_obj = Options(**options_kwargs)
@@ -385,20 +395,20 @@ mp2_energy = post_hf.run_symm()
 print(f"The mp2_energy {mp2_energy}")
 
 ##psi4.set_options({'basis': Settings["basis"],
-#import psi4
-#psi4.set_options({'basis': basis,
-#                      'scf_type': 'pk',
-#                      'mp2_type': 'conv',
-#                      'e_convergence': 1e-12,
-#                      'd_convergence': 1e-12,
-#                     'reference': 'rhf',
-#                     'guess' : 'core',
-#                     "puream": True,
-#                     "print" : 7,
-#                     "freeze_core": False})
-##ndocc = Settings["nalpha"]
+import psi4
+psi4.set_options({'basis': basis,
+                      'scf_type': 'pk',
+                      'mp2_type': 'conv',
+                      'e_convergence': 1e-12,
+                      'd_convergence': 1e-12,
+                     'reference': 'rhf',
+                     'guess' : 'sad',
+                     "puream": True,
+                     "print" : 7,
+                     "freeze_core": False})
+#ndocc = Settings["nalpha"]
 ##nbfxns = psi4.core.BasisSet.nbf(basis)
-#pe, wfn = psi4.energy('mp2', return_wfn=True)
+pe, wfn = psi4.energy('scf', return_wfn=True)
 #print(job.wfn_energy)
 #print(mp2_energy)
 #print(job.wfn_energy + mp2_energy)

@@ -8,7 +8,8 @@ import copy
 import psi4
 from bdmats import BDMatrix
 from copy import deepcopy
-
+import scipy
+import atomic_configurations
 @dataclass
 class ORB:
     irrep:int
@@ -30,7 +31,7 @@ class salc_element:
     i:int #PF index
 
 class SOrbitals():
-    def __init__(self, symtext, salcs, ndocc, options, nbfxns, fxn_list, basis):
+    def __init__(self, symtext, salcs, ndocc, options, nbfxns, fxn_list, basis, mol, basis_obj, bset):
         self.symtext = symtext
         self.salcs = salcs
         self.ndocc = ndocc
@@ -39,6 +40,9 @@ class SOrbitals():
         self.fxn_list = fxn_list
         self.basis = basis
         self.process_salcs()
+        self.mol = mol
+        self.basis_obj = basis_obj
+        self.bset = bset
         
         ints = psi4.core.MintsHelper(self.basis)
         S = ints.ao_overlap().np
@@ -57,13 +61,262 @@ class SOrbitals():
             C, self.A, eps = self.rhf_core_guessv2(self.S, T, V)
         elif self.options.guess == "gwh":
             C, self.A, eps = self.gwh_guess(self.S, T, V)
-        else:
-            raise Exception("NEED TO IMPLEMENT SAD GUESS")
+        elif self.options.guess == "sad":
+            self.D = self.sad_guess_v2(self.S, T, V)
+            A = []
+            for i, s in enumerate(self.S.blocks):
+                if len(s) == 0:
+                    A.append(np.array([]))
+                    continue
+                else:
+                    A.append(self.normalize(s))
+
+            self.A = BDMatrix(A)
+            self.Orbs = []
+            for ir, d_ir in enumerate(self.D.blocks):
+                degen = self.symtext.irreps[ir].d
+                self.Orbs.append(ORB(ir, degen, None, None))
         self.H = T + V
-        print(f"The initial core Hamiltonian {self.H}")
-        self.ndocc_irrep(C, eps)
-        self.C = C
-        self.eps = eps
+        print("The initial core Hamiltonian")
+        print(self.H)
+        if self.options.guess == "sad":
+            self.C = None
+            self.eps = None
+        else:
+            self.ndocc_irrep(C, eps)
+            self.C = C
+            self.eps = eps
+    
+    #def get_sad_fock(self, vHF):
+    #    print("inside get sad fock")
+    #    h1e = self.T + self.V
+    #    f = h1e + vHF
+    #    return f
+
+    def sad_unique_atoms(self):
+        self.atomic_densities = {}
+        natom = self.mol.natom()
+        for n in range(natom):
+            self.atomic_densities[self.mol.symbol(n)] = [self.bset[n], np.array([])]
+
+    def construct_dm_from_SAD(self):
+        densities = []
+        for n in range(self.mol.natom()):
+            densities.append(self.atomic_densities[self.mol.symbol(n)][1])
+        if len(densities) != self.mol.natom():
+            raise ValueError
+        else:
+            densities = scipy.linalg.block_diag(*densities)
+        return densities
+         
+
+    def sad_guess_v2(self, S, T, V):
+        print("Begin SAD Guess")
+        self.sad_unique_atoms()
+        for s_idx, atom_symbol in enumerate(self.atomic_densities):
+            atom_psi4 = psi4.geometry(atom_symbol)
+            self.atom_basis = psi4.core.BasisSet.build(atom_psi4, 'BASIS', self.basis_obj, puream = True)
+            atom_ints = psi4.core.MintsHelper(self.atom_basis)
+            S = atom_ints.ao_overlap().np
+            T = atom_ints.ao_kinetic().np
+            V = atom_ints.ao_potential().np
+            I = atom_ints.ao_eri().np
+            if str(atom_symbol) == 'H':
+                h1e = T + V
+                energies, coeffs = self.eig(h1e, S, atom_symbol)
+                mo_occ = np.zeros_like(energies)
+                ncore = 0
+                nopen = 1
+                open_idx = []
+                core_sort = np.argsort(energies)
+                core_idx = core_sort[:ncore]
+                if nopen > 0:
+                    open_idx = core_sort[ncore:]
+                    open_sort = np.argsort(energies[open_idx])
+                    open_idx = open_idx[open_sort[:nopen]]
+                mo_occ[core_idx] = 2
+                mo_occ[open_idx] = 1
+                dm = np.dot(coeffs*mo_occ, coeffs.T)
+                self.atomic_densities[atom_symbol][1] = dm
+                continue
+               
+            F = T + V
+            a = self.normalize(S)
+            Ft = a.dot(F).dot(a)
+            En, Ct = np.linalg.eigh(Ft)
+            pre_ao_ang = self.atomic_densities[atom_symbol][0]
+            ao_ang = []
+            for pre in pre_ao_ang:
+                for x in range(pre*2+1):
+                    ao_ang.append(int(pre))
+            ao_ang = np.array(ao_ang)
+            nao = len(ao_ang)
+            l_max = 8
+            mo_energy = []
+            mo_coeff = []
+            for l in range(l_max):
+                degen = 2 * l + 1
+                idx = np.where(ao_ang == l)[0]
+                nao_l = len(idx)
+                if nao_l > 0:
+                    nsh = nao_l // degen
+                    f_l = F[idx[:,None],idx].reshape(nsh, degen, nsh, degen)
+                    s_l = S[idx[:,None],idx].reshape(nsh, degen, nsh, degen)
+                    #avg over angular parts
+                    f_l = np.einsum('piqi->pq', f_l) / degen
+                    s_l = np.einsum('piqi->pq', s_l) / degen
+                    e, c = scipy.linalg.eigh(f_l, s_l)
+                    eig_idx = np.argmax(abs(c.real), axis=0)
+                    c[:,c[eig_idx,np.arange(len(e))].real<0] *= -1
+                    mo_energy.append(np.repeat(e, degen))
+                    mo = np.zeros((nao, nsh, degen))
+                    for i in range(degen):
+                        mo[idx[i::degen], :, i] = c
+                    mo_coeff.append(mo.reshape(nao, nao_l))
+            energies = np.hstack(mo_energy) 
+            coeffs = np.hstack(mo_coeff)
+            occ = []
+            for l in range(l_max):
+                nuc = int(self.mol.charge(0))
+                n2occ, frac = self.frac_occ(atom_symbol, l, nuc, atomic_configurations)
+                degen = 2 * l + 1
+                idx = np.array(self.atomic_densities[atom_symbol][0]) == l
+                nbas_l = len(np.array(self.atomic_densities[atom_symbol][0])[idx])
+                if l < 4:
+                    assert n2occ <= nbas_l
+                    #skip ecp treatment, we don't use them yet...
+                    occ_l = np.zeros(nbas_l)
+                    occ_l[:n2occ] = 2
+                    if frac > 0:
+                        occ_l[n2occ] = frac
+                    occ.append(np.repeat(occ_l, degen))
+                else:
+                    occ.append(np.zeros(nbas_l * degen))
+            mo_occ = np.hstack(occ)
+            mocc = coeffs[:,mo_occ>0]
+
+            dm = np.dot(mocc*mo_occ[mo_occ>0], mocc.T)
+             
+            h = T + V
+            Ji = np.einsum('pqrs,rs->pq',I,dm)
+            Ki = np.einsum('prqs,rs->pq',I,dm) #permute the indices here, b/c permuted in 2-e integral?
+            #vhf = Ji - Ki * .5
+            vhf = 2*Ji - Ki
+            f = h + vhf
+            E = (np.einsum('rs,rs->',dm,h) + np.einsum('rs,rs->',dm,f)) * .5 # arrow for scalar
+            scf_conv = False
+            for cycle in range(1, self.options.sad_cycles +1):
+                dm_last = dm
+                last_hf_e = E
+                f = h + vhf
+                energies, coeffs = self.eig(f, S, atom_symbol)
+                mo_occ = self.get_occ(energies, coeffs, atom_symbol)
+                mocc = coeffs[:,mo_occ>0]
+                dm = np.dot(mocc*mo_occ[mo_occ>0], mocc.T)
+                Ji = np.einsum('pqrs,rs->pq',I,dm)
+                Ki = np.einsum('prqs,rs->pq',I,dm) #permute the indices here, b/c permuted in 2-e integral?
+                #vhf = Ji - Ki * .5
+                vhf = 2*Ji - Ki
+                f = h + vhf
+                E = (np.einsum('rs,rs->',dm,h) + np.einsum('rs,rs->',dm,f)) * .5 # arrow for scalar
+                norm_ddm = np.linalg.norm(dm - dm_last)
+                delta_E = np.format_float_scientific(np.absolute(last_hf_e) - np.absolute(E), unique=False, precision=15) #Formats delta_E to scientific notation, takes difference of iteration energies
+                if float(delta_E) < 1e-8 and float(norm_ddm) < 1e-6:
+                    scf_conv = True 
+                if scf_conv:
+                    print(f"SCF FINISHED in {cycle} iterations!!!")
+                    self.atomic_densities[atom_symbol][1] = dm
+                    break
+                if cycle == 20 and not scf_conv:
+                    print("SAD cycles did not converge")
+                    break
+        densities = self.construct_dm_from_SAD()
+        print(f"The SAD Density Matrix") 
+        densities = self.ao_to_so(densities)
+        print(f"The Symmetry-Adapted SAD Density Matrix")
+        print(densities) 
+        return densities
+
+
+    def get_occ(self, energies, coeffs, atom_symbol):
+        print("inside get_occ")
+        l_max = 8
+        atom_symbol
+        occ = []
+        for l in range(l_max):
+            nuc = int(self.mol.charge(0))
+            n2occ, frac = self.frac_occ(atom_symbol, l, nuc, atomic_configurations)
+            degen = 2 * l + 1
+            idx = np.array(self.atomic_densities[atom_symbol][0]) == l
+            nbas_l = len(np.array(self.atomic_densities[atom_symbol][0])[idx])
+            if l < 4:
+                assert n2occ <= nbas_l
+                #skip ecp treatment, we don't use them yet...
+                occ_l = np.zeros(nbas_l)
+                occ_l[:n2occ] = 2
+                if frac > 0:
+                    occ_l[n2occ] = frac
+                occ.append(np.repeat(occ_l, degen))
+            else:
+                occ.append(np.zeros(nbas_l * degen))
+        mo_occ = np.hstack(occ)
+        #do density in here too
+        return mo_occ
+
+    def eig(self, F, S, atom_symbol):    
+        pre_ao_ang = self.atomic_densities[atom_symbol][0]
+        ao_ang = []
+        for pre in pre_ao_ang:
+            for x in range(pre*2+1):
+                ao_ang.append(int(pre))
+        ao_ang = np.array(ao_ang)
+        nao = len(ao_ang)
+        l_max = 8
+        mo_energy = []
+        mo_coeff = []
+        for l in range(l_max):
+            degen = 2 * l + 1
+            idx = np.where(ao_ang == l)[0]
+            nao_l = len(idx)
+            if nao_l > 0:
+                nsh = nao_l // degen
+                f_l = F[idx[:,None],idx].reshape(nsh, degen, nsh, degen)
+                s_l = S[idx[:,None],idx].reshape(nsh, degen, nsh, degen)
+                #avg over angular parts
+                f_l = np.einsum('piqi->pq', f_l) / degen
+                s_l = np.einsum('piqi->pq', s_l) / degen
+                e, c = scipy.linalg.eigh(f_l, s_l)
+                print(f"The e and c {e} {c}")
+                eig_idx = np.argmax(abs(c.real), axis=0)
+                c[:,c[eig_idx,np.arange(len(e))].real<0] *= -1
+                mo_energy.append(np.repeat(e, degen))
+                mo = np.zeros((nao, nsh, degen))
+                for i in range(degen):
+                    mo[idx[i::degen], :, i] = c
+                mo_coeff.append(mo.reshape(nao, nao_l))
+        energies = np.hstack(mo_energy) 
+        coeffs = np.hstack(mo_coeff)
+        return energies, coeffs
+
+
+ 
+    def frac_occ(self, symb, l, nuc, atomic_configurations):
+        #print("inside frac occ")
+        #print(atomic_configurations.atom_configs(nuc))
+        #print(atomic_configurations.atom_configs(nuc)[l])
+        #print(f"The l val {l}")
+        #print(f"The nuc {nuc}")
+        #print(atomic_configurations.atom_configs(nuc)[l]) 
+        if l < 4 and atomic_configurations.atom_configs(nuc)[l] > 0:
+            ne = atomic_configurations.atom_configs(nuc)[l]
+            nd = (l * 2 + 1) * 2
+            ndocc = ne.__floordiv__(nd)
+            frac = (float(ne) / nd - ndocc) * 2
+        else:
+            ndocc = frac = 0
+        #print(f"ndocc frac {ndocc} {frac}")
+        return ndocc, frac 
+        
     
 
     def rhf_core_guessv2(self, S, T, V):
@@ -1110,3 +1363,134 @@ class DPD():
 #            self.braket = []
 #            for b, block in enumerate(self.nonzero_blocks):
 #                self.braket.append(0)
+    def sad_guess(self, S, T, V):
+        densities = []
+        natom = self.mol.natom()
+        for n in range(natom):
+            atom_n = self.mol.symbol(n)
+            atom_psi4 = psi4.geometry(str(atom_n))
+            self.atom_basis = psi4.core.BasisSet.build(atom_psi4, 'BASIS', self.basis_obj, puream = True)
+            atom_ints = psi4.core.MintsHelper(self.atom_basis)
+            S = atom_ints.ao_overlap().np
+            T = atom_ints.ao_kinetic().np
+            V = atom_ints.ao_potential().np
+            I = atom_ints.ao_eri().np
+            if str(atom_n) == 'H':
+                h1e = T + V
+                energies, coeffs = self.eig(h1e, S, atom_symbol)
+                mo_occ = np.zeros_like(energies)
+                ncore = 0
+                nopen = 1
+                open_idx = []
+                core_sort = np.argsort(energies)
+                core_idx = core_sort[:ncore]
+                if nopen > 0:
+                    open_idx = core_sort[ncore:]
+                    open_sort = np.argsort(energies[open_idx])
+                    open_idx = open_idx[open_sort[:nopen]]
+                mo_occ[core_idx] = 2
+                mo_occ[open_idx] = 1
+                #mo_occ = self.get_occ(energies, coeffs, n)
+                dm = np.dot(coeffs*mo_occ, coeffs.T)
+                densities.append(dm)
+                continue
+               
+            F = T + V
+            a = self.normalize(S)
+            Ft = a.dot(F).dot(a)
+            En, Ct = np.linalg.eigh(Ft)
+            
+            pre_ao_ang = self.bset[n]
+            ao_ang = []
+            for pre in pre_ao_ang:
+                for x in range(pre*2+1):
+                    ao_ang.append(int(pre))
+            ao_ang = np.array(ao_ang)
+            nao = len(ao_ang)
+            l_max = 8
+            mo_energy = []
+            mo_coeff = []
+            for l in range(l_max):
+                degen = 2 * l + 1
+                idx = np.where(ao_ang == l)[0]
+                nao_l = len(idx)
+                if nao_l > 0:
+                    nsh = nao_l // degen
+                    f_l = F[idx[:,None],idx].reshape(nsh, degen, nsh, degen)
+                    s_l = S[idx[:,None],idx].reshape(nsh, degen, nsh, degen)
+                    #avg over angular parts
+                    f_l = np.einsum('piqi->pq', f_l) / degen
+                    s_l = np.einsum('piqi->pq', s_l) / degen
+                    e, c = scipy.linalg.eigh(f_l, s_l)
+                    eig_idx = np.argmax(abs(c.real), axis=0)
+                    c[:,c[eig_idx,np.arange(len(e))].real<0] *= -1
+                    mo_energy.append(np.repeat(e, degen))
+                    mo = np.zeros((nao, nsh, degen))
+                    for i in range(degen):
+                        mo[idx[i::degen], :, i] = c
+                    mo_coeff.append(mo.reshape(nao, nao_l))
+            energies = np.hstack(mo_energy) 
+            coeffs = np.hstack(mo_coeff)
+            symb = self.mol.symbol(n)
+            occ = []
+            for l in range(l_max):
+                nuc = int(self.mol.charge(0))
+                n2occ, frac = self.frac_occ(symb, l, nuc, atomic_configurations)
+                degen = 2 * l + 1
+                idx = np.array(self.bset[n]) == l
+                nbas_l = len(np.array(self.bset[n])[idx])
+                if l < 4:
+                    assert n2occ <= nbas_l
+                    #skip ecp treatment, we don't use them yet...
+                    occ_l = np.zeros(nbas_l)
+                    occ_l[:n2occ] = 2
+                    if frac > 0:
+                        occ_l[n2occ] = frac
+                    occ.append(np.repeat(occ_l, degen))
+                else:
+                    occ.append(np.zeros(nbas_l * degen))
+            mo_occ = np.hstack(occ)
+            mocc = coeffs[:,mo_occ>0]
+
+            dm = np.dot(mocc*mo_occ[mo_occ>0], mocc.T)
+             
+            h = T + V
+            Ji = np.einsum('pqrs,rs->pq',I,dm)
+            Ki = np.einsum('prqs,rs->pq',I,dm) #permute the indices here, b/c permuted in 2-e integral?
+            #vhf = Ji - Ki * .5
+            vhf = 2*Ji - Ki
+            f = h + vhf
+            E = (np.einsum('rs,rs->',dm,h) + np.einsum('rs,rs->',dm,f)) * .5 # arrow for scalar
+            scf_conv = False
+            for cycle in range(1, self.options.sad_cycles +1):
+                print(f"The cycle is {cycle}")
+                dm_last = dm
+                last_hf_e = E
+                f = h + vhf
+                print(f"The fock {f}")
+                energies, coeffs = self.eig(f, S, n)
+                #dm = self.get_occ(energies, coeffs, n)
+                mo_occ = self.get_occ(energies, coeffs, n)
+                mocc = coeffs[:,mo_occ>0]
+                dm = np.dot(mocc*mo_occ[mo_occ>0], mocc.T)
+                Ji = np.einsum('pqrs,rs->pq',I,dm)
+                Ki = np.einsum('prqs,rs->pq',I,dm) #permute the indices here, b/c permuted in 2-e integral?
+                #vhf = Ji - Ki * .5
+                vhf = 2 * Ji - Ki
+                f = h + vhf
+                E = (np.einsum('rs,rs->',dm,h) + np.einsum('rs,rs->',dm,f)) * .5 # arrow for scalar
+                norm_ddm = np.linalg.norm(dm - dm_last)
+                delta_E = np.format_float_scientific(np.absolute(last_hf_e) - np.absolute(E), unique=False, precision=15) #Formats delta_E to scientific notation, takes difference of iteration energies
+                if float(delta_E) < 1e-8 and float(norm_ddm) < 1e-6:
+                    scf_conv = True 
+                #if cycle == self.options.sad_cycles:
+                if scf_conv:
+                    densities.append(dm)
+                    break
+                if cycle == 20 and not scf_conv:
+                    print("SAD cycles did not converge")
+                    break
+        densities = scipy.linalg.block_diag(*densities)
+        densities = self.ao_to_so(densities)
+ 
+        return densities

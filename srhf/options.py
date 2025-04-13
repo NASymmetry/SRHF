@@ -13,6 +13,7 @@ class Options(object):
         self.scf_max_iter = kwargs.pop("scf_max_iter", 50)
         self.e_convergence = kwargs.pop("e_convergence", 1e-7)
         self.d_convergence = kwargs.pop("d_convergence", 1e-7)
+        self.sad_cycles = kwargs.pop("sad_cyles", 20)
 
         #DIIS
         self.diis = kwargs.pop("diis", True)
