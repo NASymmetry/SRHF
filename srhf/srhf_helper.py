@@ -6,10 +6,11 @@ from typing import Optional
 import time
 import copy
 import psi4
-from bdmats import BDMatrix
+from srhf.bdmats import BDMatrix
 from copy import deepcopy
 import scipy
-import atomic_configurations
+#import srhf.atomic_configurations
+from srhf import atomic_configurations
 @dataclass
 class ORB:
     irrep:int
@@ -54,7 +55,22 @@ class SOrbitals():
         #self.test_S = self.sparse_twoD_transform(S)
         T = self.ao_to_so(T) 
         V = self.ao_to_so(V)
-        
+        #np.savez(
+        #"nh3_ccpvdz_so_integrals.npz",
+        #S_blocks=np.array(self.S.blocks, dtype=object),
+        #T_blocks=np.array(T.blocks, dtype=object),
+        #V_blocks=np.array(V.blocks, dtype=object),
+        #)
+
+        #self.S = np.array(self.S, dtype=object)
+        #T = np.array(T, dtype=object)
+        #V = np.array(V, dtype=object)
+        #np.savez(
+        #"nh3_so_integrals.npz",
+        #S_blocks = self.S,
+        #T_blocks = T,
+        #V_blocks = V,
+        #)
         #Do other stuff before TEI transform
         if self.options.guess == "core":
             #C, A, eps = self.rhf_core_guess(S, T, V)
@@ -63,6 +79,13 @@ class SOrbitals():
             C, self.A, eps = self.gwh_guess(self.S, T, V)
         elif self.options.guess == "sad":
             self.D = self.sad_guess_v2(self.S, T, V)
+            #print("self.D type")
+            #D_blocks = np.array(self.D.blocks, dtype=object)
+            #print(type(self.D))
+            #np.savez(
+            #"nh3_sad_data.npz",
+            #D_blocks = D_blocks,
+            #)
             A = []
             for i, s in enumerate(self.S.blocks):
                 if len(s) == 0:

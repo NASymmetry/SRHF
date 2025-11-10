@@ -76,11 +76,15 @@ class SO_RHF():
 
         #Initialize the orbitals in the helper object. Take the initial guess. GWH and Core guesses are implemented.
         #Going to pass in a fake fxn_list argument for now, see if I can replace it later on...
-        so_orbitals = SOrbitals(self.symtext, self.salcs, self.ndocc, self.options, self.nbfxns, fxn_list, self.basis)
+        #so_orbitals = SOrbitals(self.symtext, self.salcs, self.ndocc, self.options, self.nbfxns, fxn_list, self.basis)
+        so_orbitals = SOrbitals(self.symtext, self.salcs, self.ndocc, self.options, self.nbfxns, fxn_list, self.basis, self.molecule, self.basis_input, bset)
         #so_orbitals.process_salcs()
         
         iter_type = "DIAG"
-        D_i, docc_vector = self.build_D(so_orbitals)
+        if self.options.guess == 'sad':
+            D_i, docc_vector = so_orbitals.D, None
+        else:
+            D_i, docc_vector = self.build_D(so_orbitals)
         ERI = ints.ao_eri().np
         print("Repacking and symmetry blocking ERI")
         before = time.time()

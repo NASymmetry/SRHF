@@ -11,10 +11,10 @@ from molsym.molecule import Molecule
 from molsym.salcs.spherical_harmonics import SphericalHarmonics
 from molsym.salcs.projection_op import ProjectionOp
 
-from bdmats import BDMatrix
-from diis_managerv2 import DIIS_Manager
-from srhf_helper import SOrbitals
-from srhf_helper import DPD
+from srhf.bdmats import BDMatrix
+from srhf.diis_managerv2 import DIIS_Manager
+from srhf.srhf_helper import SOrbitals
+from srhf.srhf_helper import DPD
 #from so_ints import SO_Ints 
 #from mo_transform import MO_Trans
 
@@ -79,6 +79,7 @@ class SRHF():
 
         #Initialize the orbitals in the helper object. Take the initial guess. GWH and Core guesses are implemented.
         #Going to pass in a fake fxn_list argument for now, see if I can replace it later on...
+
         so_orbitals = SOrbitals(self.symtext, self.salcs, self.ndocc, self.options, self.nbfxns, fxn_list, self.basis, self.molecule, self.basis_input, bset)
         #so_orbitals.process_salcs()
         iter_type = "DIAG"
@@ -86,8 +87,13 @@ class SRHF():
             D_i, docc_vector = so_orbitals.D, None
         else:
             D_i, docc_vector = self.build_D(so_orbitals)
-        print(f"The density")
-        print(D_i)
+            #np.savez(
+            #"nh3_sad_data.npz",
+            #D_list=[D_i for D_i in D_list],
+            #docc_vector=docc_vector,
+            #)
+        #print(f"The density")
+        #print(D_i)
         ERI = ints.ao_eri().np
         print("Repacking and symmetry blocking ERI")
         before = time.time()
@@ -129,15 +135,39 @@ class SRHF():
         diis_m = DIIS_Manager(self.symtext)
         start = time.time()
         E_i = 0
+        saved_data = {
+               "F": [],
+               "D": [],
+               "S": None,
+               "A": None,
+           }
         #Begin SCF iterations
         for i in range(1, self.options.scf_max_iter + 1):
             before = time.time()
             F, ftime = self.build_fock_blocky_sym(so_orbitals.H, D_i, repacked_bigERI, repacked_bigERI_swapped)
+
+            if i == 1:
+                # Capture S and A only once (they don't change)
+                saved_data["S"] = so_orbitals.S.full_mat()
+                saved_data["A"] = so_orbitals.A.full_mat()
+
+            if i <= 6:  # limit to first few iterations
+                saved_data["F"].append(F.full_mat())
+                saved_data["D"].append(D_i.full_mat())
             diis_m.do_diis(F, D_i, so_orbitals.S, so_orbitals.A, i)
             E_new = self.degen_rhf_energy(D_i, so_orbitals.H, F, so_orbitals) + self.enuc
             dRMS = diis_m.diis.dRMS
             print(f"Iter {i:>3} SCF energy {E_new:>.10f} Delta(E) {E_new - E_i:^+.10f} RMS(D) {dRMS} {docc_vector} {iter_type} took {now - before:.7f} seconds")
             if (abs(E_new - E_i) < self.options.e_convergence) and (dRMS < self.options.d_convergence):
+                np.savez(
+                "nh3_ccpvdz_diis_fixture.npz",
+                F=np.array(saved_data["F"]),
+                D=np.array(saved_data["D"]),
+                S=saved_data["S"],
+                A=saved_data["A"],
+                )
+                print("Saved DIIS test fixture → nh3_ccpvdz_diis_fixture.npz")
+
                 self.so_orbitals = so_orbitals
                 #This won't work if using the sparse transform for now... need ERI transform for post-hf
                 self.ERI = bigERI

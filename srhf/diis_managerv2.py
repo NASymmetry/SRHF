@@ -1,6 +1,6 @@
 import numpy as np
 from dataclasses import dataclass
-from bdmats import BDMatrix
+from srhf.bdmats import BDMatrix
 
 @dataclass
 class DIIS_HISTORY:
@@ -76,8 +76,14 @@ class DIIS_Manager():
                     B[num1, num2] = val
                     B[num2, num1] = val
 
-            # normalize
-            B[:-1, :-1] /= np.abs(B[:-1, :-1]).max()
+            ## normalize
+            #B[:-1, :-1] /= np.abs(B[:-1, :-1]).max()
+        
+            # normalize safely
+            norm = np.abs(B[:-1, :-1]).max()
+            if norm == 0 or np.isnan(norm):
+                raise ValueError("Zero or NaN norm in error matrix.")
+            B[:-1, :-1] /= norm
 
             # Build residual vector, [Pulay:1980:393], Eqn. 6, RHS
             resid = np.zeros(diis_count + 1)
