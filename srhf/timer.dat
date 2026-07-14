@@ -488,3 +488,307 @@ Module                                       User      System        Wall       
 --------------------------------------------------------------------------------------
 
 **************************************************************************************
+
+Host: headnode
+
+Timers On : Wed Jul  8 21:48:35 2026
+Timers Off: Wed Jul  8 21:48:37 2026
+
+Wall Time:        2.24 seconds
+
+                                                       Time (seconds)
+Module                                       User      System        Wall        Calls
+Libint2ERI::Libint2ERI              :      0.033u      0.017s      0.016w      3 calls
+
+--------------------------------------------------------------------------------------
+Libint2ERI::Libint2ERI              :      0.033u      0.017s      0.016w      3 calls
+
+**************************************************************************************
+
+Host: headnode
+
+Timers On : Wed Jul  8 21:49:04 2026
+Timers Off: Wed Jul  8 21:49:25 2026
+
+Wall Time:       20.64 seconds
+
+                                                       Time (seconds)
+Module                                       User      System        Wall        Calls
+Libint2ERI::Libint2ERI              :      0.000u      0.000s      0.002w      2 calls
+
+--------------------------------------------------------------------------------------
+Libint2ERI::Libint2ERI              :      0.000u      0.000s      0.002w      2 calls
+
+**************************************************************************************
+
+Host: headnode
+
+Timers On : Wed Jul  8 21:50:41 2026
+Timers Off: Wed Jul  8 21:51:00 2026
+
+Wall Time:       19.06 seconds
+
+                                                       Time (seconds)
+Module                                       User      System        Wall        Calls
+Libint2ERI::Libint2ERI              :      0.000u      0.000s      0.001w      2 calls
+
+--------------------------------------------------------------------------------------
+Libint2ERI::Libint2ERI              :      0.000u      0.000s      0.001w      2 calls
+
+**************************************************************************************
+
+Host: headnode
+
+Timers On : Wed Jul  8 21:51:28 2026
+Timers Off: Wed Jul  8 21:51:30 2026
+
+Wall Time:        1.44 seconds
+
+                                                       Time (seconds)
+Module                                       User      System        Wall        Calls
+Libint2ERI::Libint2ERI              :      0.000u      0.000s      0.001w      3 calls
+
+--------------------------------------------------------------------------------------
+Libint2ERI::Libint2ERI              :      0.000u      0.000s      0.001w      3 calls
+
+**************************************************************************************
+
+Host: headnode
+
+Timers On : Wed Jul  8 21:52:46 2026
+Timers Off: Wed Jul  8 21:52:47 2026
+
+Wall Time:        1.44 seconds
+
+                                                       Time (seconds)
+Module                                       User      System        Wall        Calls
+Libint2ERI::Libint2ERI              :      0.000u      0.000s      0.001w      3 calls
+
+--------------------------------------------------------------------------------------
+Libint2ERI::Libint2ERI              :      0.000u      0.000s      0.001w      3 calls
+
+**************************************************************************************
+
+Host: headnode
+
+Timers On : Wed Jul  8 22:01:41 2026
+Timers Off: Wed Jul  8 22:01:43 2026
+
+Wall Time:        1.45 seconds
+
+                                                       Time (seconds)
+Module                                       User      System        Wall        Calls
+Libint2ERI::Libint2ERI              :      0.000u      0.000s      0.001w      3 calls
+
+--------------------------------------------------------------------------------------
+Libint2ERI::Libint2ERI              :      0.000u      0.000s      0.001w      3 calls
+
+**************************************************************************************
+
+Host: headnode
+
+Timers On : Wed Jul  8 22:15:59 2026
+Timers Off: Wed Jul  8 22:16:01 2026
+
+Wall Time:        1.44 seconds
+
+                                                       Time (seconds)
+Module                                       User      System        Wall        Calls
+Libint2ERI::Libint2ERI              :      0.000u      0.000s      0.001w      3 calls
+
+--------------------------------------------------------------------------------------
+Libint2ERI::Libint2ERI              :      0.000u      0.000s      0.001w      3 calls
+
+**************************************************************************************
+
+Host: headnode
+
+Timers On : Thu Jul  9 06:37:24 2026
+Timers Off: Thu Jul  9 06:37:25 2026
+
+Wall Time:        1.47 seconds
+
+                                                       Time (seconds)
+Module                                       User      System        Wall        Calls
+Libint2ERI::Libint2ERI              :      0.000u      0.000s      0.000w      3 calls
+
+--------------------------------------------------------------------------------------
+Libint2ERI::Libint2ERI              :      0.000u      0.000s      0.000w      3 calls
+
+**************************************************************************************
+
+Host: headnode
+
+Timers On : Thu Jul  9 06:39:52 2026
+Timers Off: Thu Jul  9 06:39:54 2026
+
+Wall Time:        1.45 seconds
+
+                                                       Time (seconds)
+Module                                       User      System        Wall        Calls
+Libint2ERI::Libint2ERI              :      0.017u      0.000s      0.001w      3 calls
+
+--------------------------------------------------------------------------------------
+Libint2ERI::Libint2ERI              :      0.017u      0.000s      0.001w      3 calls
+
+**************************************************************************************
+
+Host: headnode
+
+Timers On : Thu Jul  9 06:40:11 2026
+Timers Off: Thu Jul  9 06:40:12 2026
+
+Wall Time:        1.44 seconds
+
+                                                       Time (seconds)
+Module                                       User      System        Wall        Calls
+Libint2ERI::Libint2ERI              :      0.000u      0.000s      0.001w      3 calls
+
+--------------------------------------------------------------------------------------
+Libint2ERI::Libint2ERI              :      0.000u      0.000s      0.001w      3 calls
+
+**************************************************************************************
+
+Host: headnode
+
+Timers On : Thu Jul  9 07:43:02 2026
+Timers Off: Thu Jul  9 07:43:09 2026
+
+Wall Time:        7.13 seconds
+
+                                                       Time (seconds)
+Module                                       User      System        Wall        Calls
+Libint2ERI::Libint2ERI              :      0.000u      0.017s      0.017w      3 calls
+
+--------------------------------------------------------------------------------------
+Libint2ERI::Libint2ERI              :      0.000u      0.017s      0.017w      3 calls
+
+**************************************************************************************
+
+Host: headnode
+
+Timers On : Thu Jul  9 08:07:34 2026
+Timers Off: Thu Jul  9 08:07:41 2026
+
+Wall Time:        7.09 seconds
+
+                                                       Time (seconds)
+Module                                       User      System        Wall        Calls
+Libint2ERI::Libint2ERI              :      0.000u      0.017s      0.017w      3 calls
+
+--------------------------------------------------------------------------------------
+Libint2ERI::Libint2ERI              :      0.000u      0.017s      0.017w      3 calls
+
+**************************************************************************************
+
+Host: headnode
+
+Timers On : Thu Jul  9 08:11:26 2026
+Timers Off: Thu Jul  9 08:11:28 2026
+
+Wall Time:        2.20 seconds
+
+                                                       Time (seconds)
+Module                                       User      System        Wall        Calls
+Libint2ERI::Libint2ERI              :      0.017u      0.017s      0.017w      3 calls
+
+--------------------------------------------------------------------------------------
+Libint2ERI::Libint2ERI              :      0.017u      0.017s      0.017w      3 calls
+
+**************************************************************************************
+
+Host: headnode
+
+Timers On : Thu Jul  9 08:11:46 2026
+Timers Off: Thu Jul  9 08:11:48 2026
+
+Wall Time:        2.21 seconds
+
+                                                       Time (seconds)
+Module                                       User      System        Wall        Calls
+Libint2ERI::Libint2ERI              :      0.017u      0.033s      0.017w      3 calls
+
+--------------------------------------------------------------------------------------
+Libint2ERI::Libint2ERI              :      0.017u      0.033s      0.017w      3 calls
+
+**************************************************************************************
+
+Host: headnode
+
+Timers On : Thu Jul  9 08:12:13 2026
+Timers Off: Thu Jul  9 08:12:21 2026
+
+Wall Time:        7.12 seconds
+
+                                                       Time (seconds)
+Module                                       User      System        Wall        Calls
+Libint2ERI::Libint2ERI              :      0.017u      0.033s      0.017w      3 calls
+
+--------------------------------------------------------------------------------------
+Libint2ERI::Libint2ERI              :      0.017u      0.033s      0.017w      3 calls
+
+**************************************************************************************
+
+Host: headnode
+
+Timers On : Thu Jul  9 09:20:41 2026
+Timers Off: Thu Jul  9 09:20:48 2026
+
+Wall Time:        7.26 seconds
+
+                                                       Time (seconds)
+Module                                       User      System        Wall        Calls
+Libint2ERI::Libint2ERI              :      0.000u      0.017s      0.017w      3 calls
+
+--------------------------------------------------------------------------------------
+Libint2ERI::Libint2ERI              :      0.000u      0.017s      0.017w      3 calls
+
+**************************************************************************************
+
+Host: headnode
+
+Timers On : Thu Jul  9 09:34:49 2026
+Timers Off: Thu Jul  9 09:34:56 2026
+
+Wall Time:        7.18 seconds
+
+                                                       Time (seconds)
+Module                                       User      System        Wall        Calls
+Libint2ERI::Libint2ERI              :      0.017u      0.017s      0.017w      3 calls
+
+--------------------------------------------------------------------------------------
+Libint2ERI::Libint2ERI              :      0.017u      0.017s      0.017w      3 calls
+
+**************************************************************************************
+
+Host: headnode
+
+Timers On : Tue Jul 14 16:37:16 2026
+Timers Off: Tue Jul 14 16:37:24 2026
+
+Wall Time:        7.46 seconds
+
+                                                       Time (seconds)
+Module                                       User      System        Wall        Calls
+Libint2ERI::Libint2ERI              :      0.017u      0.000s      0.017w      3 calls
+
+--------------------------------------------------------------------------------------
+Libint2ERI::Libint2ERI              :      0.017u      0.000s      0.017w      3 calls
+
+**************************************************************************************
+
+Host: headnode
+
+Timers On : Tue Jul 14 16:38:46 2026
+Timers Off: Tue Jul 14 16:38:48 2026
+
+Wall Time:        1.48 seconds
+
+                                                       Time (seconds)
+Module                                       User      System        Wall        Calls
+Libint2ERI::Libint2ERI              :      0.000u      0.000s      0.001w      3 calls
+
+--------------------------------------------------------------------------------------
+Libint2ERI::Libint2ERI              :      0.000u      0.000s      0.001w      3 calls
+
+**************************************************************************************

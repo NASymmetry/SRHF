@@ -226,21 +226,38 @@ class BDMatrix():
                     B.append(self.blocks[h][p_string])
         return BDMatrix(B)
 
-    def slice(self, in_slice, Orbs, mat = None):
-        p_string = self.process_string(in_slice, Orbs)
+    def slice(self, in_slice, Orbs, mat=None):
         B = []
-        if len(self.blocks) > 1:
-            raise ValueError("This function only works for one irrep, c1 symmetry")
+
         for h, block in enumerate(self.blocks):
-            if len(self.blocks[h]) == 0:
+            if block.size == 0:
                 B.append(np.array([]))
-            else:
-                if mat != None:
-                    self.blocks[0][p_string] = mat.blocks[h]
-                    B.append(self.blocks[0][idk_wut])
-                else:
-                    B.append(self.blocks[0][idk_wut])
+                continue
+
+            p_slice = self.process_stringv2(in_slice, Orbs[h])
+
+            if mat is not None:
+                self.blocks[h][p_slice] = mat.blocks[h]
+
+            B.append(self.blocks[h][p_slice])
+
         return BDMatrix(B)
+
+    #def slice(self, in_slice, Orbs, mat = None):
+    #    p_string = self.process_string(in_slice, Orbs)
+    #    B = []
+    #    if len(self.blocks) > 1:
+    #        raise ValueError("This function only works for one irrep, c1 symmetry")
+    #    for h, block in enumerate(self.blocks):
+    #        if len(self.blocks[h]) == 0:
+    #            B.append(np.array([]))
+    #        else:
+    #            if mat != None:
+    #                self.blocks[0][p_string] = mat.blocks[h]
+    #                B.append(self.blocks[0][idk_wut])
+    #            else:
+    #                B.append(self.blocks[0][idk_wut])
+    #    return BDMatrix(B)
 
     def einsum(self, string, *stuff):
         #check if *stuff are BDMatrix objects

@@ -1156,3 +1156,19 @@ Libint2ERI::Libint2ERI              :      0.050u      0.017s      0.038w      9
 Libint2ERI::Libint2ERI              :      0.050u      0.017s      0.038w      9 calls
 
 **************************************************************************************
+
+Host: headnode
+
+Timers On : Thu Jul  9 06:13:18 2026
+Timers Off: Thu Jul  9 06:13:20 2026
+
+Wall Time:        1.92 seconds
+
+                                                       Time (seconds)
+Module                                       User      System        Wall        Calls
+Libint2ERI::Libint2ERI              :      0.017u      0.017s      0.036w      9 calls
+
+--------------------------------------------------------------------------------------
+Libint2ERI::Libint2ERI              :      0.017u      0.017s      0.036w      9 calls
+
+**************************************************************************************

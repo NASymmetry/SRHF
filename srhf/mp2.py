@@ -76,8 +76,10 @@ class MP2():
     def run(self):
         print("MP2, c1 symmetry only")
         C = self.so_orbitals.C 
-        occ_C = C.slicev2([":", ":ndocc_ir"], self.so_orbitals.Orbs)
-        virt_C = C.slicev2([":", "ndocc_ir:"], self.so_orbitals.Orbs)
+        #occ_C = C.slicev2([":", ":ndocc_ir"], self.so_orbitals.Orbs)
+        #virt_C = C.slicev2([":", "ndocc_ir:"], self.so_orbitals.Orbs)
+        occ_C = C.slice([":", ":ndocc_ir"], self.so_orbitals.Orbs)
+        virt_C = C.slice([":", "ndocc_ir:"], self.so_orbitals.Orbs)
         self.ERI = BDMatrix.full_to_bd(self.ERI, self.so_orbitals.irreplength)
         self.G = self.ERI.transpose((0,2,1,3))
         self.IJAB = self.ERI.einsum('mnrs,mI,nJ,rA,sB -> IJAB', self.G, occ_C, occ_C, virt_C, virt_C)
