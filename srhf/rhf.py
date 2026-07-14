@@ -241,21 +241,15 @@ class SRHF():
         """
         if isinstance(D, BDMatrix):
             #print("are we bd?")
+            HF = H + F
             E = 0
             for h, d in enumerate(D.blocks):
-                if len(D.blocks[h]) == 0:
+                if d.size == 0:
                     continue
-                else:
-                    if self.options.exploit_degen:
-                        degen = SOrbs.Orbs[h].degen
-                        e = degen * sum(sum(np.multiply(D.blocks[h],(H.blocks[h]+F.blocks[h]))))
-                        E += e #*sum(sum(np.multiply(D.blocks[h],(H.blocks[h]+F.blocks[h]))))
-                    else:
-                        e = sum(sum(np.multiply(D.blocks[h],(H.blocks[h]+F.blocks[h]))))
-                        E += e #*sum(sum(np.multiply(D.blocks[h],(H.blocks[h]+F.blocks[h]))))
-
+                degen = SOrbs.Orbs[h].degen if self.options.exploit_degen else 1
+                E += degen * np.sum(d * HF.blocks[h])
         else:
-            E = sum(sum(np.multiply(D,(H+F))))
+            E = np.sum(D * (H + F))
         return E
     def build_fock_blocky_sym(self, H, Dp, repacked_bigERI, repacked_bigERI_swapped):
         start = time.time()
@@ -389,24 +383,12 @@ class SRHF():
         return oned_h, oned_f, oned_d
     def twod_oned(self, mat):
         if len(mat) == 0:
-            pass
-        else:
-            oned_mat = np.zeros((mat.shape[0] * mat.shape[1]))
-            for i in range(0, mat.shape[0]):  
-                for j in range(0, mat.shape[1]):  
-                    ij = mat.shape[1] * i + j
-                    oned_mat[ij] = mat[i,j]
-            return oned_mat
-    
+            return None
+        return mat.flatten()
+
     def oned_twod(self, mat):
         root = int(np.sqrt(mat.shape[0]))
-        twod_mat = np.zeros((root, root))
-        #lned_mat = np.zeros((mat.shape[0],  mat.shape[1]))
-        for i in range(0, twod_mat.shape[0]):  
-            for j in range(0, twod_mat.shape[1]):  
-                ij = root * i + j
-                twod_mat[i,j] = mat[ij]
-        return twod_mat
+        return mat.reshape(root, root)
         
     def build_D(self, SOrbs):
         docc_vector = []
