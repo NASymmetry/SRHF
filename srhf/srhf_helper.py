@@ -365,22 +365,11 @@ class SOrbitals():
         return C, A, En
     
     def normalize(self, s):
-        news = copy.deepcopy(s)
-        over = np.zeros(s.shape)
-        normlist = []
-        for i in range(len(s)):
-            norm1 = self.get_norm(s[i, i])
-            normlist.append(norm1)
-            for j in range(len(s)):
-                norm2 = self.get_norm(s[j,j])
-                over[i,j] = s[i,j] * norm1 * norm2
+        normlist = 1.0 / np.sqrt(np.diag(s))
+        over = np.outer(normlist, normlist) * s
         eigval, U = np.linalg.eigh(over)
-        Us = deepcopy(U)
-        for i in range(len(eigval)):
-            Us[:,i] = U[:,i] * 1.0/np.sqrt(eigval[i])
-        for i in range(len(eigval)):
-            Us[i,:] = Us[i,:] * normlist[i]
-        anti = np.dot(Us, U.T)
+        Us = (U / np.sqrt(eigval)[np.newaxis, :]) * normlist[:, np.newaxis]
+        anti = Us @ U.T
         return anti
     
     def gwh_guess(self, S, T, V):
@@ -406,12 +395,9 @@ class SOrbitals():
                 En.append(np.array([]))
                 continue
             else:
-                for fi in range(0, len(s)):
-                    F.blocks[i][fi, fi] = H.blocks[i][fi, fi]
-                    for fj in range(0, fi):
-                        dummy = 0.5 * gwh_k * (H.blocks[i][fi, fi] + H.blocks[i][fj, fj]) * s[fi, fj]
-                        F.blocks[i][fi, fj] = dummy
-                        F.blocks[i][fj, fi] = dummy
+                h_diag = np.diag(H.blocks[i])
+                F.blocks[i] = 0.5 * gwh_k * np.add.outer(h_diag, h_diag) * s
+                np.fill_diagonal(F.blocks[i], h_diag)
                 #construct A, get intial orbital energies
                 a = self.normalize(s)
                 A.append(a)
@@ -426,10 +412,7 @@ class SOrbitals():
         Ft = A.dot(F).dot(A)
         C = A.dot(Ct)
         return C, A, En
-    
-    def get_norm(self, i):
-        return 1/np.sqrt(i)
- 
+
     def ao_to_mo(self, A, B, C):
         """
         General transformation of rank to operator where A is the matrix to be transformed,
@@ -519,21 +502,6 @@ class SOrbitals():
     #    return BDMatrix(B)
                     
 
-
-    def ao_to_so_manual(self, A):
-        """
-        AO->SO transformation for one electron integrals using nested loops
-        """
-        B = []
-        for i, salc in enumerate(self.salcs.salc_sets):
-            temp = np.zeros((salc.shape[0], salc.shape[0]))
-            for u in range(temp.shape[0]):
-                for v in range(temp.shape[0]):
-                    for ui in range(salc.shape[1]):
-                        for vj in range(salc.shape[1]):
-                            temp[u, v] += A[ui, vj] * salc[u, ui] * salc[v, vj]
-            B.append(temp)
-        return BDMatrix(B)
 
     def ao_to_so(self, A):
         """
@@ -1118,26 +1086,18 @@ class DPD():
         print(f"NUMPY  Repacking Time for all blocks took {now - before:6.8f} seconds")
         return twod_tensor
   
-    #makes twod tensor by looping over mega_eri and reshaping with "for" loops
+    #makes twod tensor by gathering with np.ix_ and reshaping (vectorized, no python-level loop over AOs)
     def indices(self):
         before = time.time()
         twod_tensor = []
-        tot = 0
         for block in self.nonzero_blocks:
             i_idx, j_idx, k_idx, l_idx = self.orb_idx[block[0]], self.orb_idx[block[1]], self.orb_idx[block[2]], self.orb_idx[block[3]]
-            twod_tensor_b = np.zeros((len(i_idx) * len(j_idx), len(k_idx) * len(l_idx)))
-            for i, ib in enumerate(i_idx): 
-                for j, jb in enumerate(j_idx): 
-                   for k, kb in enumerate(k_idx): 
-                       for l, lb in enumerate(l_idx):
-                           ij = len(j_idx) * i + j
-                           kl = len(l_idx) * k + l
-                           twod_tensor_b[ij,kl] = self.tensor[ib,jb,kb,lb]
-            twod_tensor.append(twod_tensor_b)
+            sliceit = self.tensor[np.ix_(i_idx, j_idx, k_idx, l_idx)]
+            twod_tensor.append(sliceit.reshape(len(i_idx) * len(j_idx), len(k_idx) * len(l_idx)))
         now = time.time()
-        print(f"Manual Repacking Time for all blocks took {now - before:6.8f} seconds")
+        print(f"Repacking Time for all blocks took {now - before:6.8f} seconds")
         #test alternate implementation
-        #self.alternate() 
+        #self.alternate()
         return twod_tensor
     def blocks(self):
         self.nonzero_blocks = []
