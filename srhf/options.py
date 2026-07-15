@@ -27,6 +27,9 @@ class Options(object):
         #Ints source
         self.intsdpd = kwargs.pop("intsdpd", True)
         self.sparse_transform = kwargs.pop("sparse_transform", True)
+        #Experimental: DegenTensor-based ERI compression + Fock build
+        #(srhf.degen_tensor). Takes priority over sparse_transform when True.
+        self.degen_tensor = kwargs.pop("degen_tensor", False)
 
         #Second Order Convergence
         self.second_order = kwargs.pop("second_order", False)

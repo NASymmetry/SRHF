@@ -15,6 +15,7 @@ from srhf.bdmats import BDMatrix
 from srhf.diis_managerv2 import DIIS_Manager
 from srhf.srhf_helper import SOrbitals
 from srhf.srhf_helper import DPD
+from srhf.degen_tensor import DegenTensor, DegenIntegralFactory
 #from so_ints import SO_Ints 
 #from mo_transform import MO_Trans
 
@@ -30,6 +31,11 @@ class SRHF():
     
     def run(self):
         print("Run the SO_RHF code!")
+        if self.options.degen_tensor and self.options.mp2:
+            raise NotImplementedError(
+                "MP2 is not yet supported with degen_tensor=True; see mp2.py's "
+                "KNOWN LIMITATION docstring for the underlying gap."
+            )
         self.ndocc = self.process_input() // 2
         #molecule stuff
         schema = self.qc()
@@ -99,7 +105,18 @@ class SRHF():
         before = time.time()
         self.dpd = DPD(self.salcs.salcs_by_irrep, self.symtext, self.salcs, so_orbitals, D_i, self.options)
         #repacked_bigERI_swapped = self.dpd.trial_swap
-        if self.options.sparse_transform:
+        if self.options.degen_tensor:
+            if self.options.sparse_transform:
+                print("options.degen_tensor=True takes priority over sparse_transform; ignoring sparse_transform")
+            print("Using the DegenTensor-based ERI compression + Fock build")
+            nonzero_blocks = self.dpd.nonzero_tiles()
+            self.dpd.nonzero_blocks = nonzero_blocks
+            self.degen_factory = DegenIntegralFactory(self.salcs, self.symtext, so_orbitals, self.options)
+            repacked_bigERI = self.degen_factory.degen_ERI_transform(ERI, nonzero_blocks, swap = False)
+            repacked_bigERI_swapped = self.degen_factory.degen_ERI_transform(ERI, nonzero_blocks, swap = True)
+            now = time.time()
+            print(f"Finished DegenTensor ERI transform and repack {now - before:6.3f}")
+        elif self.options.sparse_transform:
             repacked_bigERI = self.dpd.sparse_ERI_transform(ERI, swap = False)
             repacked_bigERI_swapped = self.dpd.sparse_ERI_transform(ERI, swap = True)
             now = time.time()
@@ -117,7 +134,10 @@ class SRHF():
             print(f"Finished repack {now - before:6.3f}")
         #print(f"Finished repack {now - before:6.3f}")
         if self.options.guess == "sad":
-            j, k = self.get_vhf(D_i, repacked_bigERI, repacked_bigERI_swapped)
+            if self.options.degen_tensor:
+                j, k = self.get_vhf_degen_tensor(D_i, repacked_bigERI, repacked_bigERI_swapped)
+            else:
+                j, k = self.get_vhf(D_i, repacked_bigERI, repacked_bigERI_swapped)
             vhf = j - k * 0.5
             e = self.alt_degen_rhf_energy(D_i, so_orbitals.H, vhf, so_orbitals) + self.enuc
             print(f"The initial SCF energy via SAD {e}")
@@ -144,7 +164,10 @@ class SRHF():
         #Begin SCF iterations
         for i in range(1, self.options.scf_max_iter + 1):
             before = time.time()
-            F, ftime = self.build_fock_blocky_sym(so_orbitals.H, D_i, repacked_bigERI, repacked_bigERI_swapped)
+            if self.options.degen_tensor:
+                F, ftime = self.build_fock_degen_tensor(so_orbitals.H, D_i, repacked_bigERI, repacked_bigERI_swapped)
+            else:
+                F, ftime = self.build_fock_blocky_sym(so_orbitals.H, D_i, repacked_bigERI, repacked_bigERI_swapped)
 
             if i == 1:
                 # Capture S and A only once (they don't change)
@@ -170,7 +193,7 @@ class SRHF():
 
                 self.so_orbitals = so_orbitals
                 #This won't work if using the sparse transform for now... need ERI transform for post-hf
-                if not self.options.sparse_transform:
+                if not self.options.sparse_transform and not self.options.degen_tensor:
                     self.ERI = bigERI
                 self.repacked_bigERI = repacked_bigERI
                 self.so_orbitals.C = C
@@ -285,6 +308,29 @@ class SRHF():
         #return F, BDMatrix(vhf), finish - start
         return F, finish - start
 
+    def build_fock_degen_tensor(self, H, Dp, repacked_bigERI, repacked_bigERI_swapped):
+        """
+        DegenTensor-based analogue of build_fock_blocky_sym. Operates on
+        native 4-index ERI blocks directly -- no twod_oned/oned_twod
+        flatten round-trip, no braket/jk() special-casing. Degeneracy
+        scaling is resolved automatically by DegenTensor.einsum from each
+        ERI block's own axis metadata.
+        """
+        start = time.time()
+        oned_f = [np.zeros_like(h) if len(h) else np.array([]) for h in H.blocks]
+        for b, block in enumerate(self.dpd.nonzero_blocks):
+            f_sym, d_sym = block[0], block[3]
+            D_block = Dp.blocks[d_sym]
+            J = DegenTensor.einsum('pqrs,rs->pq', repacked_bigERI[b], D_block)
+            K = DegenTensor.einsum('pqrs,rs->pq', repacked_bigERI_swapped[b], D_block)
+            oned_f[f_sym] += 2 * J.array - K.array
+        F = BDMatrix([
+            oned_f[h] + H.blocks[h] if len(H.blocks[h]) else np.array([])
+            for h in range(len(H.blocks))
+        ])
+        finish = time.time()
+        return F, finish - start
+
     def get_fock(self, H, Dp, repacked_bigERI, repacked_bigERI_swapped):
         start = time.time()
         #broadcast h d and f to oned. fock should really be the only one packed and unpacked each time, could be fed into this function
@@ -342,7 +388,32 @@ class SRHF():
             #j_temp.append(self.oned_twod(j)) #created for demo purposes only
             #k_temp.append(self.oned_twod(k)) #created for demo purposes only
         return BDMatrix(j_temp), BDMatrix(k_temp)
-    
+
+    def get_vhf_degen_tensor(self, D, repacked_bigERI, repacked_bigERI_swapped):
+        """
+        DegenTensor-based analogue of get_vhf, used for the initial
+        SAD-guess Fock build. See build_fock_degen_tensor for the general
+        approach.
+        """
+        j_temp, k_temp = [], []
+        for dm in D.blocks:
+            if len(dm) == 0:
+                j_temp.append(np.array([]))
+                k_temp.append(np.array([]))
+            else:
+                j_temp.append(np.zeros_like(dm))
+                k_temp.append(np.zeros_like(dm))
+
+        for b, block in enumerate(self.dpd.nonzero_blocks):
+            d_sym = block[3]
+            f_sym = block[0]
+            D_block = D.blocks[d_sym]
+            J = DegenTensor.einsum('pqrs,rs->pq', repacked_bigERI[b], D_block)
+            K = DegenTensor.einsum('pqrs,rs->pq', repacked_bigERI_swapped[b], D_block)
+            j_temp[f_sym] = J.array
+            k_temp[f_sym] = K.array
+        return BDMatrix(j_temp), BDMatrix(k_temp)
+
     def repack_fock(self, oned_f, oned_h):
         F = []
         for z, hs in enumerate(oned_h):
