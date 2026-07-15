@@ -168,11 +168,8 @@ class SOrbitals():
             Ft = a.dot(F).dot(a)
             En, Ct = np.linalg.eigh(Ft)
             pre_ao_ang = self.atomic_densities[atom_symbol][0]
-            ao_ang = []
-            for pre in pre_ao_ang:
-                for x in range(pre*2+1):
-                    ao_ang.append(int(pre))
-            ao_ang = np.array(ao_ang)
+            pre_ao_ang = np.asarray(pre_ao_ang, dtype=int)
+            ao_ang = np.repeat(pre_ao_ang, 2 * pre_ao_ang + 1)
             nao = len(ao_ang)
             l_max = 8
             mo_energy = []
@@ -286,13 +283,10 @@ class SOrbitals():
         #do density in here too
         return mo_occ
 
-    def eig(self, F, S, atom_symbol):    
+    def eig(self, F, S, atom_symbol):
         pre_ao_ang = self.atomic_densities[atom_symbol][0]
-        ao_ang = []
-        for pre in pre_ao_ang:
-            for x in range(pre*2+1):
-                ao_ang.append(int(pre))
-        ao_ang = np.array(ao_ang)
+        pre_ao_ang = np.asarray(pre_ao_ang, dtype=int)
+        ao_ang = np.repeat(pre_ao_ang, 2 * pre_ao_ang + 1)
         nao = len(ao_ang)
         l_max = 8
         mo_energy = []
@@ -1005,7 +999,7 @@ class DPD():
 #                                temp[ij,kl2] += tensor[salc_i.i_idx, salc_j.i_idx, salc_k.i_idx, salc_l.i_idx] * salc_i.element * salc_j.element * salc_k.element * salc_l.element
 #        return temp / ket_degen
 
-    def nonzero_tiles(self):
+    def _find_nonzero_blocks(self):
         #combinations of i, j, k, and l that are nonzero for HF ERI
         #checks if direct product of ij (bra) and kl (ket) contain TSIR within themselves
         nonzero_blocks = []
@@ -1019,9 +1013,11 @@ class DPD():
                                     for l in range(0, len(self.orb_idx)):
                                         if len(self.orb_idx[l]) != 0:
                                             if self.dp_contains_tsir(k, l):
-                                                #return i, j, k, l
                                                 nonzero_blocks.append([i, j, k, l])
         return nonzero_blocks
+
+    def nonzero_tiles(self):
+        return self._find_nonzero_blocks()
 
 ####
 
@@ -1030,23 +1026,9 @@ class DPD():
     def lookup_hf_ERI(self, tensor):
         self.tensor = tensor
         before = time.time()
-        self.nonzero_blocks = []
-        self.i_symmetry = []
-        self.k_symmetry = []
-        for i in range(0, len(self.orb_idx)):
-            if len(self.orb_idx[i]) != 0:
-                for j in range(0, len(self.orb_idx)):
-                    if len(self.orb_idx[j]) != 0:
-                        if self.dp_contains_tsir(i, j):
-                            for k in range(0, len(self.orb_idx)):
-                                if len(self.orb_idx[k]) != 0:
-                                    for l in range(0, len(self.orb_idx)):
-                                        if len(self.orb_idx[l]) != 0:
-                                            if self.dp_contains_tsir(k, l):
-                                                #print(f" ijkl {i, j, k, l}")
-                                                self.i_symmetry.append(i)
-                                                self.k_symmetry.append(k)
-                                                self.nonzero_blocks.append([i, j, k, l])
+        self.nonzero_blocks = self._find_nonzero_blocks()
+        self.i_symmetry = [block[0] for block in self.nonzero_blocks]
+        self.k_symmetry = [block[2] for block in self.nonzero_blocks]
         self.twod_tensor = self.indices()
         if self.options.exploit_degen:
             self.lookup_degen()
@@ -1099,25 +1081,6 @@ class DPD():
         #test alternate implementation
         #self.alternate()
         return twod_tensor
-    def blocks(self):
-        self.nonzero_blocks = []
-        self.i_symmetry = []
-        self.k_symmetry = []
-        for i in range(0, len(self.orb_idx)):
-            if len(self.orb_idx[i]) != 0:
-                for j in range(0, len(self.orb_idx)):
-                    if len(self.orb_idx[j]) != 0:
-                        if self.dp_contains_tsir(i, j):
-                            for k in range(0, len(self.orb_idx)):
-                                if len(self.orb_idx[k]) != 0:
-                                    for l in range(0, len(self.orb_idx)):
-                                        if len(self.orb_idx[l]) != 0:
-                                            if self.dp_contains_tsir(k, l):
-                                                #print(f" ijkl {i, j, k, l}")
-                                                self.i_symmetry.append(i)
-                                                self.k_symmetry.append(k)
-                                                self.nonzero_blocks.append([i, j, k, l])
-
 
     def transform(self, A, i,j,k,l):
         E = np.einsum("PQRS,Pp,Qq,Rr,Ss", A, i.T,j.T,k.T,l.T, optimize ='optimal')
@@ -1497,134 +1460,3 @@ class DPD():
 #            self.braket = []
 #            for b, block in enumerate(self.nonzero_blocks):
 #                self.braket.append(0)
-    def sad_guess(self, S, T, V):
-        densities = []
-        natom = self.mol.natom()
-        for n in range(natom):
-            atom_n = self.mol.symbol(n)
-            atom_psi4 = psi4.geometry(str(atom_n))
-            self.atom_basis = psi4.core.BasisSet.build(atom_psi4, 'BASIS', self.basis_obj, puream = True)
-            atom_ints = psi4.core.MintsHelper(self.atom_basis)
-            S = atom_ints.ao_overlap().np
-            T = atom_ints.ao_kinetic().np
-            V = atom_ints.ao_potential().np
-            I = atom_ints.ao_eri().np
-            if str(atom_n) == 'H':
-                h1e = T + V
-                energies, coeffs = self.eig(h1e, S, atom_symbol)
-                mo_occ = np.zeros_like(energies)
-                ncore = 0
-                nopen = 1
-                open_idx = []
-                core_sort = np.argsort(energies)
-                core_idx = core_sort[:ncore]
-                if nopen > 0:
-                    open_idx = core_sort[ncore:]
-                    open_sort = np.argsort(energies[open_idx])
-                    open_idx = open_idx[open_sort[:nopen]]
-                mo_occ[core_idx] = 2
-                mo_occ[open_idx] = 1
-                #mo_occ = self.get_occ(energies, coeffs, n)
-                dm = np.dot(coeffs*mo_occ, coeffs.T)
-                densities.append(dm)
-                continue
-               
-            F = T + V
-            a = self.normalize(S)
-            Ft = a.dot(F).dot(a)
-            En, Ct = np.linalg.eigh(Ft)
-            
-            pre_ao_ang = self.bset[n]
-            ao_ang = []
-            for pre in pre_ao_ang:
-                for x in range(pre*2+1):
-                    ao_ang.append(int(pre))
-            ao_ang = np.array(ao_ang)
-            nao = len(ao_ang)
-            l_max = 8
-            mo_energy = []
-            mo_coeff = []
-            for l in range(l_max):
-                degen = 2 * l + 1
-                idx = np.where(ao_ang == l)[0]
-                nao_l = len(idx)
-                if nao_l > 0:
-                    nsh = nao_l // degen
-                    f_l = F[idx[:,None],idx].reshape(nsh, degen, nsh, degen)
-                    s_l = S[idx[:,None],idx].reshape(nsh, degen, nsh, degen)
-                    #avg over angular parts
-                    f_l = np.einsum('piqi->pq', f_l) / degen
-                    s_l = np.einsum('piqi->pq', s_l) / degen
-                    e, c = scipy.linalg.eigh(f_l, s_l)
-                    eig_idx = np.argmax(abs(c.real), axis=0)
-                    c[:,c[eig_idx,np.arange(len(e))].real<0] *= -1
-                    mo_energy.append(np.repeat(e, degen))
-                    mo = np.zeros((nao, nsh, degen))
-                    for i in range(degen):
-                        mo[idx[i::degen], :, i] = c
-                    mo_coeff.append(mo.reshape(nao, nao_l))
-            energies = np.hstack(mo_energy) 
-            coeffs = np.hstack(mo_coeff)
-            symb = self.mol.symbol(n)
-            occ = []
-            for l in range(l_max):
-                nuc = int(self.mol.charge(0))
-                n2occ, frac = self.frac_occ(symb, l, nuc, atomic_configurations)
-                degen = 2 * l + 1
-                idx = np.array(self.bset[n]) == l
-                nbas_l = len(np.array(self.bset[n])[idx])
-                if l < 4:
-                    assert n2occ <= nbas_l
-                    #skip ecp treatment, we don't use them yet...
-                    occ_l = np.zeros(nbas_l)
-                    occ_l[:n2occ] = 2
-                    if frac > 0:
-                        occ_l[n2occ] = frac
-                    occ.append(np.repeat(occ_l, degen))
-                else:
-                    occ.append(np.zeros(nbas_l * degen))
-            mo_occ = np.hstack(occ)
-            mocc = coeffs[:,mo_occ>0]
-
-            dm = np.dot(mocc*mo_occ[mo_occ>0], mocc.T)
-             
-            h = T + V
-            Ji = np.einsum('pqrs,rs->pq',I,dm)
-            Ki = np.einsum('prqs,rs->pq',I,dm) #permute the indices here, b/c permuted in 2-e integral?
-            #vhf = Ji - Ki * .5
-            vhf = 2*Ji - Ki
-            f = h + vhf
-            E = (np.einsum('rs,rs->',dm,h) + np.einsum('rs,rs->',dm,f)) * .5 # arrow for scalar
-            scf_conv = False
-            for cycle in range(1, self.options.sad_cycles +1):
-                print(f"The cycle is {cycle}")
-                dm_last = dm
-                last_hf_e = E
-                f = h + vhf
-                print(f"The fock {f}")
-                energies, coeffs = self.eig(f, S, n)
-                #dm = self.get_occ(energies, coeffs, n)
-                mo_occ = self.get_occ(energies, coeffs, n)
-                mocc = coeffs[:,mo_occ>0]
-                dm = np.dot(mocc*mo_occ[mo_occ>0], mocc.T)
-                Ji = np.einsum('pqrs,rs->pq',I,dm)
-                Ki = np.einsum('prqs,rs->pq',I,dm) #permute the indices here, b/c permuted in 2-e integral?
-                #vhf = Ji - Ki * .5
-                vhf = 2 * Ji - Ki
-                f = h + vhf
-                E = (np.einsum('rs,rs->',dm,h) + np.einsum('rs,rs->',dm,f)) * .5 # arrow for scalar
-                norm_ddm = np.linalg.norm(dm - dm_last)
-                delta_E = np.format_float_scientific(np.absolute(last_hf_e) - np.absolute(E), unique=False, precision=15) #Formats delta_E to scientific notation, takes difference of iteration energies
-                if float(delta_E) < 1e-8 and float(norm_ddm) < 1e-6:
-                    scf_conv = True 
-                #if cycle == self.options.sad_cycles:
-                if scf_conv:
-                    densities.append(dm)
-                    break
-                if cycle == 20 and not scf_conv:
-                    print("SAD cycles did not converge")
-                    break
-        densities = scipy.linalg.block_diag(*densities)
-        densities = self.ao_to_so(densities)
- 
-        return densities
