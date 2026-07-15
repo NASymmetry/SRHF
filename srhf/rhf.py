@@ -170,7 +170,8 @@ class SRHF():
 
                 self.so_orbitals = so_orbitals
                 #This won't work if using the sparse transform for now... need ERI transform for post-hf
-                self.ERI = bigERI
+                if not self.options.sparse_transform:
+                    self.ERI = bigERI
                 self.repacked_bigERI = repacked_bigERI
                 self.so_orbitals.C = C
                 self.so_orbitals.eps = eps

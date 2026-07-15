@@ -362,12 +362,12 @@ options_kwargs = {
         #"subgroup" : "C1",
         "subgroup" : False,
         "scf_max_iter": 53,
-        "exploit_degen" : True,
+        "exploit_degen" : False,
         #"exploit_degen" : False,
         "guess" : "sad",
         #"guess" : "sad",
         "benchmark" : False,
-        "intsdpd": True,
+        "intsdpd": False,
         "e_convergence": 1e-10,
         "d_convergence": 1e-10,
         "compare_psi" : True,
@@ -378,7 +378,7 @@ options_kwargs = {
         #"docc" : [1, 0, 0, 0, 1, 0, 0, 0, 0, 0],
         "second_order" : False,
         "mp2" : True,
-        "sparse_transform" : True,
+        "sparse_transform" : False,
         }
 options_obj = Options(**options_kwargs)
 #if options_obj.second_order:
