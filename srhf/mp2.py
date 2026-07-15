@@ -108,3 +108,71 @@ class MP2():
         E_2 = np.sum(IJAB * (2 * IJAB - IJAB.swapaxes(2, 3)) / denom)
         print(E_2)
         return E_2   # Total MP2 Correlation Energy
+
+    def run_degen_tensor(self):
+        """
+        exploit_degen=True-aware MP2 correlation energy.
+
+        An earlier version of this method decomposed the calculation into
+        per-(mu,nu)-irrep-pair blocks (mirroring how the SCF Fock build
+        uses DPD/DegenIntegralFactory's nonzero_blocks). That was
+        fundamentally wrong, not just buggy: DPD's nonzero_blocks requires
+        each pair (bra: p,q and ket: r,s) to SEPARATELY contain the totally
+        symmetric irrep, which forces p==q and r==s. That's a valid filter
+        for the Fock build only because D/F are themselves block-diagonal,
+        so cross-irrep ERI contributions get multiplied by D_rs=0 and
+        vanish regardless of whether they're "really" nonzero. MP2 has no
+        such shield -- it needs the raw (ia|jb) values directly, and the
+        true selection rule (irrep_p⊗irrep_q and irrep_r⊗irrep_s sharing
+        ANY common irreducible component, not necessarily the totally
+        symmetric one, and not requiring p==q) is weaker than what
+        nonzero_blocks captures. Verified directly: run_symm()'s own
+        (correct) combined IJAB tensor has significant nonzero values for
+        cross-irrep bra pairs, even for water (no degenerate irreps at
+        all) -- so a nonzero_blocks-shaped decomposition silently drops
+        real contributions for ANY molecule, not just degenerate ones.
+
+        This version instead reuses run_symm()'s exact combined-tensor
+        formula unchanged (so it inherits run_symm()'s correctness with no
+        selection-rule reasoning of its own), and fixes only what actually
+        breaks under exploit_degen=True: so_orbitals.C's per-irrep blocks
+        are compressed to irreplength[h] (one representative partner) for
+        a degenerate irrep, while the ERI stays at full nbfxns. Tiling each
+        irrep's compressed coefficient block and eigenvalue array across
+        its own degeneracy count (MO coefficients/energies are identical
+        for every partner -- the same assumption already used throughout
+        this codebase's compressed eps/Orbs bookkeeping) before combining
+        produces a full nbfxns-sized occ_C/virt_C, dimensionally consistent
+        with self.ERI, with every partner combination now a distinct
+        element -- no further degeneracy weighting needed anywhere.
+        """
+        so = self.so_orbitals
+        occ_C = so.C.slicev2([":", ":ndocc_ir"], so.Orbs)
+        virt_C = so.C.slicev2([":", "ndocc_ir:"], so.Orbs)
+
+        occ_tiled, virt_tiled, eocc_tiled, evirt_tiled = [], [], [], []
+        for h in range(len(so.symtext.irreps)):
+            blk_o, blk_v = occ_C.blocks[h], virt_C.blocks[h]
+            if blk_o.size == 0 and blk_v.size == 0:
+                continue
+            degen = so.symtext.irreps[h].d if self.options.exploit_degen else 1
+            ndocc_h = so.Orbs[h].ndocc_ir
+            for _ in range(degen):
+                occ_tiled.append(blk_o)
+                virt_tiled.append(blk_v)
+                eocc_tiled.append(so.eps[h][:ndocc_h])
+                evirt_tiled.append(so.eps[h][ndocc_h:])
+
+        occ_C_full = block_diag(*occ_tiled)
+        virt_C_full = block_diag(*virt_tiled)
+        Eocc = np.concatenate(eocc_tiled)
+        Evirt = np.concatenate(evirt_tiled)
+
+        IJAB = np.einsum(
+            'mnrs,mI,nA,rJ,sB->IAJB', self.ERI,
+            occ_C_full, virt_C_full, occ_C_full, virt_C_full,
+            optimize='optimal',
+        )
+        denom = (Eocc[:, None, None, None] + Eocc[None, None, :, None]
+                 - Evirt[None, :, None, None] - Evirt[None, None, None, :])
+        return np.sum(IJAB * (2 * IJAB - IJAB.swapaxes(1, 3)) / denom)
