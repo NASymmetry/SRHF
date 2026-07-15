@@ -407,25 +407,6 @@ class SOrbitals():
         C = A.dot(Ct)
         return C, A, En
 
-    def ao_to_mo(self, A, B, C):
-        """
-        General transformation of rank to operator where A is the matrix to be transformed,
-        B and C are the left and right hand transformation matrices
-        """
-        B = []
-        for h, c in enumerate(C.blocks):
-            if len(c) == 0:
-                B.append(np.array([]))
-            else:
-                string1 = 'ui,uv->iv'
-                string2 = 'iv,vj->ij'
-                test = np.einsum(string1, c, A.blocks[h], optimize ='optimal')
-                test2 = np.einsum(string2, test, c, optimize ='optimal')
-                idk =  np.einsum('ui,uv->iv', c, A.blocks[h], optimize ='optimal')
-                idk1 =  np.einsum('iv,vj->ij',idk, c, optimize ='optimal')
-                B.append(idk1)
-        return BDMatrix(B)
-
     #def find_sparse_salcs(self, threshold):
     #    self.sparse_salcs = []
     #    for h, salc in enumerate(self.salcs.salc_sets):
