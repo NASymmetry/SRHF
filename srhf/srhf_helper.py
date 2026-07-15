@@ -136,6 +136,13 @@ class SOrbitals():
     def sad_guess_v2(self, S, T, V):
         print("Begin SAD Guess")
         self.sad_unique_atoms()
+        # psi4.geometry(atom_symbol) below overwrites Psi4's globally active
+        # molecule as a side effect, once per unique atom -- restore the
+        # molecule that was active before this loop so callers (and any
+        # later bare psi4.energy(...)/psi4.geometry() call relying on the
+        # active molecule) still see the real molecule, not whichever atom
+        # happened to be processed last.
+        original_active_molecule = psi4.core.get_active_molecule()
         for s_idx, atom_symbol in enumerate(self.atomic_densities):
             atom_psi4 = psi4.geometry(atom_symbol)
             self.atom_basis = psi4.core.BasisSet.build(atom_psi4, 'BASIS', self.basis_obj, puream = True)
@@ -250,6 +257,7 @@ class SOrbitals():
                 if cycle == 20 and not scf_conv:
                     print("SAD cycles did not converge")
                     break
+        psi4.core.set_active_molecule(original_active_molecule)
         densities = self.construct_dm_from_SAD()
         print(f"The SAD Density Matrix") 
         densities = self.ao_to_so(densities)

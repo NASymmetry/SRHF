@@ -29,7 +29,7 @@ class BDMatrix():
         return BDMatrix(B)
 
     def __mul__(self, n):
-        if type(n) is int or float:
+        if isinstance(n, (int, float)):
             B = []
             for i, block in enumerate(self.blocks):
                 B.append(n * block)
@@ -152,15 +152,36 @@ class BDMatrix():
             c += s
         return fullmat
 
+    @staticmethod
+    def irrep_offsets(sizes):
+        # Cumulative starting index of each irrep's block, given a list of
+        # per-irrep sizes -- shared bookkeeping for anything that needs to
+        # locate irrep h's slice within an array built by concatenating
+        # per-irrep blocks in irrep order (e.g. full_to_bd below, or a
+        # combined-index array built directly from so_orbitals.irreplength
+        # elsewhere).
+        offsets, o = [], 0
+        for s in sizes:
+            offsets.append(o)
+            o += s
+        return offsets
+
     def full_to_bd(self, irreplength):
+        # Slices every axis of self by the same irrep-h offset/length, not
+        # just the first two -- for a 2D matrix this is identical to
+        # slicing axes 0-1 only, but for a 4-index tensor (e.g. a raw ERI)
+        # it correctly restricts ALL FOUR axes to irrep h, matching what
+        # BDMatrix.einsum's per-h contraction already assumes of every
+        # operand. Previously slicing only axes 0-1 silently left axes 2-3
+        # at the full, un-sliced dimension for rank>2 arrays.
         B = []
-        offset = 0
+        offsets = BDMatrix.irrep_offsets(irreplength)
         for i, il in enumerate(irreplength):
             if il == 0:
                 B.append(np.array([]))
             else:
-                B.append(self[offset:offset + il, offset:offset + il])
-            offset += il
+                idx = tuple(slice(offsets[i], offsets[i] + il) for _ in range(np.ndim(self)))
+                B.append(self[idx])
         return BDMatrix(B)
     
     def furtherv2(self, s, Orbs_h):
@@ -219,11 +240,15 @@ class BDMatrix():
                 B.append(np.array([]))
             else:
                 p_string = self.process_stringv2(in_slice, Orbs[h])
-                if mat != None:
+                target = self.blocks[h][p_string]
+                if mat is not None and target.size != 0:
+                    # See slice()'s matching comment: writing into a
+                    # zero-element target is a no-op, and skipping it
+                    # avoids broadcast errors between differently-shaped
+                    # but equally-empty arrays.
                     self.blocks[h][p_string] = mat.blocks[h]
-                    B.append(self.blocks[h][p_string])
-                else:
-                    B.append(self.blocks[h][p_string])
+                    target = self.blocks[h][p_string]
+                B.append(target)
         return BDMatrix(B)
 
     def slice(self, in_slice, Orbs, mat=None):
@@ -235,11 +260,20 @@ class BDMatrix():
                 continue
 
             p_slice = self.process_stringv2(in_slice, Orbs[h])
+            target = self.blocks[h][p_slice]
 
-            if mat is not None:
+            if mat is not None and target.size != 0:
+                # Writing into a zero-element target is a no-op regardless
+                # of shape, and skipping it avoids numpy broadcast errors
+                # between differently-shaped-but-equally-empty arrays (e.g.
+                # a genuinely (0,1)-shaped slice vs. a bare (0,)-shaped
+                # mat.blocks[h] produced by another method's generic empty
+                # fallback -- both are "nothing to write", just represented
+                # with different ndim).
                 self.blocks[h][p_slice] = mat.blocks[h]
+                target = self.blocks[h][p_slice]
 
-            B.append(self.blocks[h][p_slice])
+            B.append(target)
 
         return BDMatrix(B)
 
@@ -274,9 +308,14 @@ class BDMatrix():
         return BDMatrix(B)
 
     def reshape(self, *args):
+        # .size==0 (not len()==0, which only checks axis 0) -- an irrep can
+        # have a nonzero axis-0 length but still zero TOTAL elements (e.g.
+        # ndocc_ir>0 but nvirt_ir==0, giving a genuinely (ndocc,0,ndocc,0)-
+        # shaped block), and reshape(..., -1) can't infer -1 against a
+        # size-0 array. Matches BDMatrix.inv's existing .size==0 check.
         B = []
         for h, block in enumerate(self.blocks):
-            if len(self.blocks[h]) == 0:
+            if block.size == 0:
                 B.append(np.array([]))
             else:
                 B.append(block.reshape(*args[h]))
