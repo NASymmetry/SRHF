@@ -86,29 +86,44 @@ class SOrbitals():
             #"nh3_sad_data.npz",
             #D_blocks = D_blocks,
             #)
-            A = []
-            for i, s in enumerate(self.S.blocks):
-                if len(s) == 0:
-                    A.append(np.array([]))
-                    continue
-                else:
-                    A.append(self.normalize(s))
-
-            self.A = BDMatrix(A)
-            self.Orbs = []
-            for ir, d_ir in enumerate(self.D.blocks):
-                degen = self.symtext.irreps[ir].d
-                self.Orbs.append(ORB(ir, degen, None, None))
+            self._bootstrap_orthogonalization()
+        elif self.options.guess == "custom":
+            # Like "sad", C/Orbs[h].ndocc_ir are left for run() to
+            # bootstrap from a starting density -- here that density is
+            # Options.initial_D_ao (e.g. SO_RHF.rhf_mode_follow's rotated-
+            # orbital guess), AO-to-SO transformed in run() via
+            # so_orbitals.ao_to_so(...), rather than SAD's atomic
+            # superposition.
+            self._bootstrap_orthogonalization()
         self.H = T + V
         print("The initial core Hamiltonian")
         print(self.H)
-        if self.options.guess == "sad":
+        if self.options.guess in ("sad", "custom"):
             self.C = None
             self.eps = None
         else:
             self.ndocc_irrep(C, eps)
             self.C = C
             self.eps = eps
+
+    def _bootstrap_orthogonalization(self):
+        """Build self.A (per-irrep symmetric orthogonalization of self.S)
+        and self.Orbs (with ndocc_ir/nvirt_ir left as None, to be filled
+        in by ndocc_irrep once a real C/eps is available) -- shared by
+        guess="sad" and guess="custom", which both defer getting a real
+        C/eps to SO_RHF.run() rather than computing one here."""
+        A = []
+        for i, s in enumerate(self.S.blocks):
+            if len(s) == 0:
+                A.append(np.array([]))
+                continue
+            else:
+                A.append(self.normalize(s))
+        self.A = BDMatrix(A)
+        self.Orbs = []
+        for ir, s_ir in enumerate(self.S.blocks):
+            degen = self.symtext.irreps[ir].d
+            self.Orbs.append(ORB(ir, degen, None, None))
     
     #def get_sad_fock(self, vHF):
     #    print("inside get sad fock")

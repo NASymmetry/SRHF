@@ -4,7 +4,7 @@ import sys
 import time
 from copy import deepcopy
 from dataclasses import dataclass
-from scipy.linalg import fractional_matrix_power, block_diag
+from scipy.linalg import fractional_matrix_power, block_diag, expm
 import psi4
 
 import molsym
@@ -16,6 +16,7 @@ from srhf.bdmats import BDMatrix
 from srhf.diis_managerv2 import DIIS_Manager
 from srhf.srhf_helper import SOrbitals
 from srhf.srhf_helper import DPD
+from srhf.options import Options
 #from so_ints import SO_Ints 
 #from mo_transform import MO_Trans
 
@@ -67,6 +68,7 @@ class RHFStabilityResult:
 
 class SO_RHF():
     def __init__(self, mymol, basis_input, options):
+        self.mymol = mymol
         self.molecule = psi4.geometry(mymol)
         self.molecule.update_geometry()
         self.basis_input = basis_input
@@ -127,6 +129,13 @@ class SO_RHF():
         iter_type = "DIAG"
         if self.options.guess == 'sad':
             D_i, docc_vector = so_orbitals.D, None
+        elif self.options.guess == 'custom':
+            # AO-basis density supplied by the caller (e.g.
+            # SO_RHF.rhf_mode_follow's rotated-orbital guess) -- AO->SO
+            # transformed the same way S/T/V already are, since a density
+            # matrix transforms as an ordinary bilinear operator under a
+            # basis change, exactly like those do.
+            D_i, docc_vector = so_orbitals.ao_to_so(self.options.initial_D_ao), None
         else:
             D_i, docc_vector = self.build_D(so_orbitals)
         ERI = ints.ao_eri().np
@@ -144,19 +153,22 @@ class SO_RHF():
         repacked_bigERI_swapped = self.dpd.twod_tensor
         now = time.time()
         print(f"Finished repack {now - before:6.3f}")
-        if self.options.guess == 'sad':
+        if self.options.guess in ('sad', 'custom'):
             # Unlike rhf.py's guess="sad" branch, D_i here is still the raw
-            # SAD density -- so_orbitals.C/eps/Orbs[h].ndocc_ir are all still
-            # None (see SOrbitals.__init__), and nothing below ever
-            # populates them otherwise: build_D() just reads
-            # Orbs[h].ndocc_ir back out, and the SOSCF Newton step needs a
-            # real ndocc_ir per irrep for its Hessian shapes. Build an
-            # initial Fock from the raw SAD density, diagonalize it to get
-            # a real C/eps, and use that to assign ndocc_ir per irrep --
-            # mirroring rhf.py's own guess="sad" initialization.
+            # initial density (SAD superposition, or the AO->SO transform
+            # of a caller-supplied Options.initial_D_ao for "custom") --
+            # so_orbitals.C/eps/Orbs[h].ndocc_ir are all still None (see
+            # SOrbitals.__init__), and nothing below ever populates them
+            # otherwise: build_D() just reads Orbs[h].ndocc_ir back out,
+            # and the SOSCF Newton step needs a real ndocc_ir per irrep
+            # for its Hessian shapes. Build an initial Fock from that
+            # density, diagonalize it to get a real C/eps, and use that to
+            # assign ndocc_ir per irrep -- mirroring rhf.py's own
+            # guess="sad" initialization; "custom" reuses the identical
+            # bootstrap, just starting from a different density.
             F_guess, _ = self.build_fock_blocky_sym(so_orbitals.H, D_i, repacked_bigERI, repacked_bigERI_swapped)
             e_guess = self.degen_rhf_energy(D_i, so_orbitals.H, F_guess, so_orbitals) + self.enuc
-            print(f"The initial SCF energy via SAD {e_guess}")
+            print(f"The initial SCF energy via {self.options.guess} {e_guess}")
             Fs = so_orbitals.A.transpose().dot(F_guess.dot(so_orbitals.A))
             eps, Cs = Fs.eigh()
             C = so_orbitals.A.dot(Cs)
@@ -820,6 +832,101 @@ class SO_RHF():
             verdict_stable="RHF determinant is stable to spin-symmetry breaking (RHF->UHF):",
             n=n, neg_threshold=neg_threshold, cluster_tol=cluster_tol,
         )
+
+    def rhf_mode_follow(self, result, mode_index=0, step=0.5, subgroup="C1"):
+        """
+        Mode following: rotate the converged (but unstable) orbitals along
+        one eigenvector of a rhf_stability_analysis() result and reconverge
+        in a fresh, lower-symmetry SO_RHF job -- the standard technique
+        (Gaussian's stable=opt, Psi4's follow) for escaping a symmetric
+        saddle point RHF solution and finding the true (possibly lower-
+        symmetry) minimum. Single-step and composable, matching this
+        codebase's existing manual style: call rhf_stability_analysis()
+        again on the returned job and call this method again yourself if
+        it's still unstable, rather than looping automatically.
+
+        Why a NEW job, in C1: an unstable mode found by
+        rhf_stability_analysis() generally mixes across irreps/degenerate
+        partners (that's precisely what makes it a POINT-GROUP
+        instability, not just a within-symmetry one) -- this codebase's
+        whole SCF machinery (SALC-adapted Fock builds, symmetric
+        densities) is structurally restricted to the CURRENT job's point
+        group, so it has no way to represent the rotated, lower-symmetry
+        wavefunction in place. C1 is used unconditionally rather than
+        trying to algorithmically identify the tighter subgroup the
+        instability's (Gamma_occ, Gamma_virt) character implies (a real
+        group-theory determination, not attempted here) -- C1 can always
+        represent the rotation regardless of which subgroup would
+        technically have sufficed, at the cost of losing symmetry speedup
+        for the follow-up run. An explicit, deliberately deferred
+        follow-on.
+
+        Mechanics: build the rotation kappa (antisymmetric, spanning the
+        SAME fully-tiled, un-pooled occ x virt space rhf_stability_analysis
+        diagonalizes -- reusing _build_tiled_mo_data/_gather_stability_pairs
+        rather than threading extra state through RHFStabilityResult, cheap
+        relative to the reconverge cost) from the requested eigenvector,
+        apply it to C_tiled via expm, then convert the rotated occupied
+        columns from the tiled SALC basis to a genuine AO-basis density:
+            C_ao = SALC_full.T @ C_tiled_rotated
+        where SALC_full vertically stacks EVERY populated irrep's full
+        (untruncated -- unlike ao_to_so's own representative-only
+        salc[:irreplength] slice, since C_tiled's tiling already spans
+        every partner) SALC matrix. Verified numerically (ammonia/STO-3G):
+        C_ao is S-orthonormal to ~1e-9 and reproduces job.wfn_energy to
+        ~1e-8 in the untouched (kappa=0) case, and stays exactly
+        S-orthonormal after a genuine cross-irrep rotation. A density (not
+        a C matrix) is what actually gets handed to the new job -- it
+        transforms as a plain bilinear operator under a basis change,
+        exactly like S/T/V already do via so_orbitals.ao_to_so(), avoiding
+        the need for a second, unvalidated SALC-basis back-transform for a
+        coefficient matrix.
+
+        step (kappa's rotation angle) is an empirical "kick" size, not a
+        line-search step -- tuned against a genuine textbook instability
+        (square, D4h-forced cyclobutadiene run in its D2h subgroup,
+        STO-3G: one negative stability eigenvalue, ~-0.047). 0.3 rad
+        turned out too small: DIIS/SOSCF just reconverged back to the
+        SAME symmetric saddle point (bit-identical energy and stability
+        eigenvalue), a known SCF phenomenon where a small perturbation
+        gets damped back into a robust attractor rather than following
+        the true downhill direction. 0.5 rad and up (scanned to 2.0)
+        reliably escapes to a genuinely lower-energy, stable solution
+        (min eigenvalue flips from -0.047 to +0.043) -- except exactly at
+        step=pi/2, a degenerate rotation angle special case, not
+        representative of the general behavior. 0.5 is the default; if a
+        given system still snaps back to its starting point, try a
+        larger step before concluding the mode is spurious.
+
+        Must be called after run() has converged, same as
+        rhf_stability_analysis().
+        """
+        if not hasattr(self, "wfn_energy"):
+            raise RuntimeError("rhf_mode_follow() requires a converged run() first")
+
+        so = self.so_orbitals
+        occ_C = self.C.slicev2([":", ":ndocc_ir"], so.Orbs)
+        moF = self.F.einsum('ui,vj,uv', self.C, self.C, self.F)
+        tiled = self._build_tiled_mo_data(self.bigERI, occ_C, self.C, moF, so)
+        _, _, _, i_comb_arr, a_arr, *_ = self._gather_stability_pairs(tiled, so)
+
+        eigvec = result.eigenvectors[:, mode_index]
+        N = tiled.C_tiled.shape[0]
+        kappa = np.zeros((N, N))
+        kappa[i_comb_arr, a_arr] = step * eigvec
+        kappa[a_arr, i_comb_arr] = -step * eigvec
+        C_tiled_rot = tiled.C_tiled @ expm(kappa)
+
+        SALC_full = np.vstack([self.salcs.salc_sets[h] for h in tiled.populated])
+        comb_occ = np.unique(i_comb_arr)
+        C_ao_occ = SALC_full.T @ C_tiled_rot[:, comb_occ]
+        D_ao = C_ao_occ @ C_ao_occ.T
+
+        new_kwargs = {k: v for k, v in vars(self.options).items()}
+        new_kwargs.update(subgroup=subgroup, guess="custom", initial_D_ao=D_ao, docc=None)
+        new_job = SO_RHF(self.mymol, self.basis_input, Options(**new_kwargs))
+        new_job.run()
+        return new_job
 
     def create_slices(self, slice_args, Orbs):
         #for now, Orbs only supports ndocc_irrep objects

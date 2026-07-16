@@ -511,3 +511,112 @@ def test_uhf_stability_labels_match_psi4_degeneracy_structure(name):
             f"psi4 has {len(psi4_group)} distinct-label roots, ours only has {len(remaining[idx])}"
         )
         remaining.pop(idx)
+
+
+# ---------------------------------------------------------------------------
+# Mode following: rotate along an unstable mode and reconverge
+# ---------------------------------------------------------------------------
+#
+# rhf_mode_follow() has no Psi4 counterpart to compare against directly --
+# these are self-consistency checks against this codebase's own stability
+# analysis: a genuinely unstable solution should reconverge (in a fresh,
+# lower-symmetry job) to something with LOWER energy and an IMPROVED
+# stability spectrum, while a genuinely stable solution should be
+# unaffected (a small kick off a true minimum just relaxes back).
+#
+# CYCLOBUTADIENE_D4H is the classic textbook RHF point-group instability:
+# square (D4h-forced) cyclobutadiene's true equilibrium is rectangular
+# (D2h), so the D4h-symmetric closed-shell RHF solution is a genuine saddle
+# point. Run in the D2h subgroup here (not full D4h) because D4h's own Eg
+# frontier pair can't be closed-shell-filled at all (splits the aufbau
+# boundary -- see srhf_helper.py's count_ndocc ValueError, confirmed to
+# fire for the full-D4h case during development); D2h splits that Eg pair
+# into non-degenerate B2g/B3g, so it converges cleanly to a valid (if
+# unstable) solution -- confirmed via rhf_stability_analysis to have
+# exactly one negative eigenvalue (~-0.047, STO-3G), dominated by a
+# genuinely cross-irrep B3gxB2g character (confirmed via
+# report_rhf_stability), i.e. a real point-group-breaking instability, not
+# something the ordinary same-irrep-only Newton step could ever have found
+# on its own.
+
+CYCLOBUTADIENE_D4H = """
+  noreorient
+  0 1
+  units angstrom
+C   0.7250   0.7250   0.0
+C  -0.7250   0.7250   0.0
+C  -0.7250  -0.7250   0.0
+C   0.7250  -0.7250   0.0
+H   1.4400   1.4400   0.0
+H  -1.4400   1.4400   0.0
+H  -1.4400  -1.4400   0.0
+H   1.4400  -1.4400   0.0
+"""
+
+
+@pytest.fixture(scope="module")
+def unstable_cbd_job():
+    opts = Options(subgroup="D2h", exploit_degen=True, guess="sad",
+                    scf_max_iter=50, e_convergence=1e-10, d_convergence=1e-10,
+                    diis=True, second_order=True)
+    job = SO_RHF(CYCLOBUTADIENE_D4H, "sto-3g", opts)
+    job.run()
+    return job
+
+
+def test_cbd_d2h_has_a_genuine_instability(unstable_cbd_job):
+    """Guard for the fixture itself: if this ever stops being unstable
+    (e.g. the aufbau/occupation fixes elsewhere in this codebase change
+    which stationary point SAD converges to), the mode-following tests
+    below would be vacuous -- fail loudly instead of silently no-op'ing."""
+    result = unstable_cbd_job.rhf_stability_analysis()
+    assert result.eigenvalues.min() < -1e-3, (
+        f"expected a genuine instability, got min eigenvalue {result.eigenvalues.min()}"
+    )
+
+
+def test_mode_follow_escapes_known_instability(unstable_cbd_job):
+    job = unstable_cbd_job
+    result = job.rhf_stability_analysis()
+    lowest_before = result.eigenvalues.min()
+
+    new_job = job.rhf_mode_follow(result, mode_index=0, step=0.5)
+
+    assert new_job.wfn_energy < job.wfn_energy - 1e-4, (
+        f"mode following did not lower the energy: {job.wfn_energy} -> {new_job.wfn_energy}"
+    )
+    new_result = new_job.rhf_stability_analysis()
+    assert new_result.eigenvalues.min() > lowest_before + 1e-4, (
+        f"mode following did not improve stability: {lowest_before} -> {new_result.eigenvalues.min()}"
+    )
+
+
+def test_mode_follow_stable_case_reconverges_to_same_solution():
+    """A kick along a STABLE (positive-eigenvalue) mode has nowhere lower
+    to go -- reconverging should land back on essentially the same
+    energy and spectrum, not wander off or diverge."""
+    opts = Options(subgroup=False, exploit_degen=False, guess="sad",
+                    scf_max_iter=50, e_convergence=1e-11, d_convergence=1e-11,
+                    diis=True, second_order=True)
+    job = SO_RHF(WATER, "sto-3g", opts)
+    job.run()
+    result = job.rhf_stability_analysis()
+    assert result.eigenvalues.min() > 0, "expected water to be stable"
+
+    new_job = job.rhf_mode_follow(result, mode_index=0, step=0.5)
+
+    assert abs(new_job.wfn_energy - job.wfn_energy) < 1e-6, (
+        f"stable case should round-trip to the same energy: "
+        f"{job.wfn_energy} -> {new_job.wfn_energy}"
+    )
+    new_result = new_job.rhf_stability_analysis()
+    assert new_result.eigenvalues.min() > 0, "should remain stable after round-tripping"
+
+
+def test_mode_follow_requires_converged_run():
+    opts = Options(subgroup=False, exploit_degen=False, guess="sad",
+                    scf_max_iter=50, e_convergence=1e-11, d_convergence=1e-11,
+                    diis=True, second_order=True)
+    job = SO_RHF(WATER, "sto-3g", opts)
+    with pytest.raises(RuntimeError):
+        job.rhf_mode_follow(None)

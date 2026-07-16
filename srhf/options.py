@@ -8,6 +8,10 @@ class Options(object):
         #Starting Guess
         self.docc = kwargs.pop("docc", None)
         self.guess = kwargs.pop("guess", "core")
+        #AO-basis density for guess="custom" (e.g. SO_RHF.rhf_mode_follow's
+        #rotated-orbital guess, which has no shared symmetry machinery to
+        #express itself in a fresh job's own SO/SALC basis)
+        self.initial_D_ao = kwargs.pop("initial_D_ao", None)
 
         #SCF Iterations
         self.scf_max_iter = kwargs.pop("scf_max_iter", 50)
