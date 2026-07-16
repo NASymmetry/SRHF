@@ -3,6 +3,7 @@ import copy
 import sys
 import time
 from copy import deepcopy
+from dataclasses import dataclass
 from scipy.linalg import fractional_matrix_power, block_diag
 import psi4
 
@@ -19,6 +20,49 @@ from srhf.srhf_helper import DPD
 #from mo_transform import MO_Trans
 
 np.set_printoptions(precision=5, linewidth=200, suppress=True)
+
+
+@dataclass
+class TiledMOData:
+    """
+    Combined-and-tiled AO->MO integral/Fock data: every irrep's
+    representative-partner block duplicated degen_h times (1 if
+    exploit_degen=False for that irrep -- so_orbitals.irreplength[h] is
+    already the full, uncompressed size in that case, and tiling it
+    further would over-index; degen_h = symtext.irreps[h].d only when
+    exploit_degen=True actually compressed this irrep down to one
+    representative partner). See SO_RHF._build_tiled_mo_data's docstring
+    for the full rationale and who consumes this.
+    """
+    I_tiled: np.ndarray
+    MO_tiled: np.ndarray
+    C_tiled: np.ndarray
+    occ_C_tiled: np.ndarray
+    moF_tiled: np.ndarray
+    tile_start: dict
+    occ_tile_start: dict
+    populated: list
+    irreplength: list
+    full_offsets: list
+
+
+@dataclass
+class RHFStabilityResult:
+    """
+    Result of SO_RHF.rhf_stability_analysis(). eigenvalues/eigenvectors
+    are from np.linalg.eigh (ascending order) of the full, un-pooled real
+    singlet (1A+1B) RHF stability Hessian -- every occupied x virtual
+    orbital pair, every degenerate-irrep partner independent (see that
+    method's docstring). occ_irrep_of[k]/virt_irrep_of[k] give the point-
+    group irrep index of the occupied/virtual orbital in rotation-index
+    k of the Hessian (same ordering as the Hessian's rows/columns, NOT
+    the same as eigenvector component ordering unless you're indexing
+    eigenvectors[:, i][k]).
+    """
+    eigenvalues: np.ndarray
+    eigenvectors: np.ndarray
+    occ_irrep_of: np.ndarray
+    virt_irrep_of: np.ndarray
 
 
 class SO_RHF():
@@ -286,43 +330,38 @@ class SO_RHF():
         x_flat = np.linalg.solve(Biajb_dense, gn_flat)
         return x_flat, active_by_irrep
 
-    def _build_soscf_hessian(self, bigERI, occ_C, C, moF, so_orbitals):
+    def _build_tiled_mo_data(self, bigERI, occ_C, C, moF, so_orbitals):
         """
-        Build the dense, cross-irrep-AND-cross-partner-coupled orbital-
-        rotation Hessian Biajb_dense and gradient gn_flat (shape
-        (n_active, n_active) / (n_active,), row/column order given by
-        active_by_irrep -- see soscf_newton_step's docstring for the full
-        design rationale), plus representative-partner-only MO_dense/
-        I_dense/occ_num/comb_occ/comb_virt (unaffected by the tiling below
-        -- kept for test/test_soscf_hessian.py's cross-irrep-focused
-        checks and the DegenIntegralFactory diagonal-block regression).
+        Build the combined-and-TILED AO->MO integral/Fock data (see
+        TiledMOData's docstring for the tiling policy). Shared by
+        _build_soscf_hessian (Newton step -- further restricts to
+        same-irrep pairs and pools partners back down to one shared
+        rotation parameter, see its own docstring for why) and
+        rhf_stability_analysis (uses every tiled occ/virt index
+        independently, no restriction, no pooling -- see its docstring
+        for why pooling would be physically wrong for stability testing).
 
-        Internally builds a TILED combined space -- every irrep's
-        representative-partner block duplicated degen_h times (1 if
-        exploit_degen=False, matching MP2.run_degen_tensor()'s recipe --
-        see its docstring in mp2.py) -- computes the Hessian/gradient
-        formula there (same formula as the representative-only case,
-        automatically picking up real cross-partner two-electron coupling
-        for pairs living in different partners of the same degenerate
-        irrep), then SUMS ("pools") each representative pair's degen_h
-        tiled copies back down to one Biajb_dense/gn_flat entry -- this is
-        the "shared kappa applied identically to every partner" physics,
-        not a new degeneracy-aware parametrization (the active-pair count
-        stays exactly ndocc_h*nvirt_h per irrep, never scaled by degen_h).
+        Mirrors MP2.run_degen_tensor()'s tiling recipe (srhf/mp2.py) --
+        see its docstring for the general "full SALC offsets vs
+        compressed irreplength" distinction this also relies on to
+        locate each partner's own rows within the full, uncompressed
+        bigERI.
         """
         irreplength = so_orbitals.irreplength
         full_sizes = [salc.shape[0] for salc in self.salcs.salc_sets]
         full_offsets = BDMatrix.irrep_offsets(full_sizes)
-        combined_offsets = BDMatrix.irrep_offsets(irreplength)
-        occ_offsets = BDMatrix.irrep_offsets([orb.ndocc_ir for orb in so_orbitals.Orbs])
-
         populated = [h for h in range(len(irreplength)) if irreplength[h] > 0]
 
-        # --- Tiled combined space: irrep h contributes degen_h copies of
-        # its representative-partner block, located via the FULL (not
+        # Tiled combined space: irrep h contributes degen_h copies of its
+        # representative-partner block, located via the FULL (not
         # irreplength-based) per-partner offset -- same distinction
         # DegenIntegralFactory's _full_offsets vs _compute_offsets(
-        # irreplength) already draws.
+        # irreplength) already draws. degen_h is gated by
+        # self.options.exploit_degen because so_orbitals.irreplength[h]
+        # (and hence C.blocks[h]/occ_C.blocks[h]/moF.blocks[h]) is ALREADY
+        # the full, uncompressed size when exploit_degen=False -- tiling
+        # further in that case would over-index (confirmed the hard way:
+        # this is not a policy choice, it's reading the data correctly).
         idx_tiled_parts, occ_C_tiled_blocks, C_tiled_blocks, moF_tiled_blocks = [], [], [], []
         tile_start = {}  # irrep h -> this irrep's first-partner offset within the tiled combined space
         occ_tile_start = {}  # irrep h -> list of this irrep's per-partner offsets within the tiled occ-only axis
@@ -351,6 +390,49 @@ class SO_RHF():
             'PQRS,Pp,Qq,Rr,Ss->pqrs', I_tiled, occ_C_tiled, C_tiled, C_tiled, C_tiled,
             optimize='optimal',
         )
+
+        return TiledMOData(
+            I_tiled=I_tiled, MO_tiled=MO_tiled, C_tiled=C_tiled, occ_C_tiled=occ_C_tiled,
+            moF_tiled=moF_tiled, tile_start=tile_start, occ_tile_start=occ_tile_start,
+            populated=populated, irreplength=irreplength, full_offsets=full_offsets,
+        )
+
+    def _build_soscf_hessian(self, bigERI, occ_C, C, moF, so_orbitals):
+        """
+        Build the dense, cross-irrep-AND-cross-partner-coupled orbital-
+        rotation Hessian Biajb_dense and gradient gn_flat (shape
+        (n_active, n_active) / (n_active,), row/column order given by
+        active_by_irrep -- see soscf_newton_step's docstring for the full
+        design rationale), plus representative-partner-only MO_dense/
+        I_dense/occ_num/comb_occ/comb_virt (unaffected by the tiling below
+        -- kept for test/test_soscf_hessian.py's cross-irrep-focused
+        checks and the DegenIntegralFactory diagonal-block regression).
+
+        Internally builds a TILED combined space -- every irrep's
+        representative-partner block duplicated degen_h times (1 if
+        exploit_degen=False, matching MP2.run_degen_tensor()'s recipe --
+        see its docstring in mp2.py) -- computes the Hessian/gradient
+        formula there (same formula as the representative-only case,
+        automatically picking up real cross-partner two-electron coupling
+        for pairs living in different partners of the same degenerate
+        irrep), then SUMS ("pools") each representative pair's degen_h
+        tiled copies back down to one Biajb_dense/gn_flat entry -- this is
+        the "shared kappa applied identically to every partner" physics,
+        not a new degeneracy-aware parametrization (the active-pair count
+        stays exactly ndocc_h*nvirt_h per irrep, never scaled by degen_h).
+        """
+        tiled = self._build_tiled_mo_data(bigERI, occ_C, C, moF, so_orbitals)
+        irreplength = tiled.irreplength
+        full_offsets = tiled.full_offsets
+        populated = tiled.populated
+        tile_start = tiled.tile_start
+        occ_tile_start = tiled.occ_tile_start
+        I_tiled = tiled.I_tiled
+        MO_tiled = tiled.MO_tiled
+        moF_tiled = tiled.moF_tiled
+
+        combined_offsets = BDMatrix.irrep_offsets(irreplength)
+        occ_offsets = BDMatrix.irrep_offsets([orb.ndocc_ir for orb in so_orbitals.Orbs])
 
         # Representative-partner-only (degen_h=1 slice of the above) --
         # exactly reproduces the previous, already-validated construction;
@@ -430,6 +512,187 @@ class SO_RHF():
         gn_flat = P @ gn_tiled
 
         return Biajb_dense, active_by_irrep, gn_flat, np.array(occ_num), np.array(comb_occ), np.array(comb_virt), MO_dense, I_dense
+
+    def rhf_stability_analysis(self):
+        """
+        Real, singlet RHF->RHF wavefunction stability analysis: diagonalize
+        the full (1A+1B) orbital-rotation Hessian over EVERY occupied x
+        virtual orbital pair (every irrep combination, every degenerate-
+        irrep partner independent -- NOT restricted to same-irrep "active"
+        pairs, and NOT pooled across partners, unlike _build_soscf_hessian's
+        Newton-step Hessian). A negative eigenvalue means there is an
+        occupied-virtual rotation that lowers the energy -- the wavefunction
+        is a saddle point, not a true minimum, in the tested space.
+
+        Restricting to same-irrep pairs (as the Newton step correctly does,
+        since only those have nonzero GRADIENT) would silently hide exactly
+        the interesting case: a direction with zero gradient (by symmetry)
+        but negative curvature -- a point-group instability. Pooling
+        degenerate-irrep partners (as the Newton step also correctly does,
+        since its rotation parameter really is one shared kappa applied
+        identically to every partner) would make it structurally impossible
+        to detect a distortion that breaks a partner's own degeneracy (a
+        Jahn-Teller-type instability) -- so this method always explores
+        every partner independently.
+
+        Formula is the standard real singlet (1A+1B) TDHF/RPA stability
+        matrix:
+            H_iajb = delta_ij F_ab - delta_ab F_ij + 4(ia|jb) - (ij|ab) - (ib|ja)
+        identical to _build_soscf_hessian's Biajb_dense formula (up to that
+        method's x4 Newton-step scaling, which doesn't affect eigenvalue
+        sign) -- confirmed by direct comparison, and the resulting
+        eigenvalue spectrum matches Psi4's own stability_analysis='check'
+        output to 5-6 decimal places for every molecule tested (see
+        test/test_rhf_stability.py), independent of whether this job used
+        exploit_degen=True or False (confirmed bit-identical, ~1e-14,
+        either way -- as it must be, since both describe the same physical
+        wavefunction; _build_tiled_mo_data already handles the bookkeeping
+        for correctly reconstructing the full space regardless of which
+        setting this job used).
+
+        Must be called after run() has converged (uses the same
+        self.bigERI/self.C/self.F/self.so_orbitals/self.salcs stashed at
+        the convergence break, already relied on by
+        test/test_soscf_hessian.py's external _build_soscf_hessian calls).
+        """
+        if not hasattr(self, "wfn_energy"):
+            raise RuntimeError("rhf_stability_analysis() requires a converged run() first")
+
+        so = self.so_orbitals
+        occ_C = self.C.slicev2([":", ":ndocc_ir"], so.Orbs)
+        moF = self.F.einsum('ui,vj,uv', self.C, self.C, self.F)
+        tiled = self._build_tiled_mo_data(self.bigERI, occ_C, self.C, moF, so)
+
+        # occ_num: occ-only numbering, matching MO_tiled's axis 0 (built
+        # from occ_C_tiled). comb_occ/comb_virt: full combined-space
+        # numbering, matching MO_tiled's other 3 axes (built from
+        # C_tiled) and moF_tiled (both axes) -- same two-numbering-system
+        # distinction _build_soscf_hessian already draws for its own
+        # occ_num vs comb_occ/comb_virt, just without the same-irrep
+        # restriction and without pooling.
+        occ_num, comb_occ, comb_virt, occ_irrep, virt_irrep = [], [], [], [], []
+        for h in tiled.populated:
+            degen_h = so.symtext.irreps[h].d if self.options.exploit_degen else 1
+            ndocc_h, nvirt_h = so.Orbs[h].ndocc_ir, so.Orbs[h].nvirt_ir
+            il_h = tiled.irreplength[h]
+            for mu in range(degen_h):
+                base = tiled.tile_start[h] + mu * il_h
+                occ_base = tiled.occ_tile_start[h][mu]
+                for i_local in range(ndocc_h):
+                    occ_num.append(occ_base + i_local)
+                    comb_occ.append(base + i_local)
+                    occ_irrep.append(h)
+                for a_local in range(nvirt_h):
+                    comb_virt.append(base + ndocc_h + a_local)
+                    virt_irrep.append(h)
+
+        if not occ_num or not comb_virt:
+            empty = np.array([])
+            return RHFStabilityResult(eigenvalues=empty, eigenvectors=empty,
+                                       occ_irrep_of=empty, virt_irrep_of=empty)
+
+        occ_num = np.array(occ_num)
+        comb_occ = np.array(comb_occ)
+        comb_virt = np.array(comb_virt)
+        occ_irrep = np.array(occ_irrep)
+        virt_irrep = np.array(virt_irrep)
+
+        n_occ_full, n_virt_full = len(occ_num), len(comb_virt)
+        i_num_arr = np.repeat(occ_num, n_virt_full)     # for MO_tiled's occ-only axis
+        i_comb_arr = np.repeat(comb_occ, n_virt_full)   # for MO_tiled's other axes / moF_tiled
+        a_arr = np.tile(comb_virt, n_occ_full)
+        occ_irrep_of = np.repeat(occ_irrep, n_virt_full)
+        virt_irrep_of = np.tile(virt_irrep, n_occ_full)
+
+        MO_tiled = tiled.MO_tiled
+        moF_tiled = tiled.moF_tiled
+
+        delta_occ = i_comb_arr[:, None] == i_comb_arr[None, :]
+        delta_virt = a_arr[:, None] == a_arr[None, :]
+        F_vv = moF_tiled[np.ix_(a_arr, a_arr)]
+        F_oo = moF_tiled[np.ix_(i_comb_arr, i_comb_arr)]
+        fock_term = np.where(delta_occ, F_vv, 0.0) - np.where(delta_virt, F_oo, 0.0)
+
+        ia_jb = MO_tiled[i_num_arr[:, None], a_arr[:, None], i_comb_arr[None, :], a_arr[None, :]]
+        ij_ab = MO_tiled[i_num_arr[:, None], i_comb_arr[None, :], a_arr[:, None], a_arr[None, :]]
+        ib_ja = MO_tiled[i_num_arr[:, None], a_arr[None, :], i_comb_arr[None, :], a_arr[:, None]]
+
+        H_iajb = fock_term + 4.0 * ia_jb - ib_ja - ij_ab
+        eigvals, eigvecs = np.linalg.eigh(H_iajb)
+
+        return RHFStabilityResult(eigenvalues=eigvals, eigenvectors=eigvecs,
+                                   occ_irrep_of=occ_irrep_of, virt_irrep_of=virt_irrep_of)
+
+    def report_rhf_stability(self, result, n=10, neg_threshold=-1e-6, cluster_tol=1e-6):
+        """
+        Print a Psi4-style stability report ("Lowest singlet (RHF->RHF)
+        stability eigenvalues:") for a result from rhf_stability_analysis().
+
+        The "(occ irrep, virt irrep) block weight" column is a cheap,
+        HONEST diagnostic, not a rigorous irreducible-representation label:
+        it's each near-degenerate eigenvalue CLUSTER's weight (summed over
+        the whole cluster, not per individual eigenvector -- np.linalg.eigh
+        returns an arbitrary orthonormal basis WITHIN a repeated eigenspace,
+        e.g. ammonia's genuine E-irrep degeneracy, so a per-eigenvector
+        weight would be a basis artifact, not physics) living in each
+        (occupied irrep, virtual irrep) pair block. A single such block can
+        itself further decompose into multiple irreducible components for
+        non-Abelian groups (e.g. C3v's E(x)E = A1+A2+E) -- getting the TRUE
+        irreducible label of each mode needs a Clebsch-Gordan/projection-
+        operator decomposition (feasible via symtext.irrep_mats, confirmed
+        available in an earlier investigation, but not implemented here --
+        an explicit follow-on, not this pass).
+        """
+        so = self.so_orbitals
+        irrep_symbols = [ir.symbol for ir in so.symtext.irreps]
+        eigvals, eigvecs = result.eigenvalues, result.eigenvectors
+        n_total = len(eigvals)
+        if n_total == 0:
+            print("No active occupied-virtual rotations to test.")
+            return
+
+        clusters = []
+        start = 0
+        for k in range(1, n_total):
+            if eigvals[k] - eigvals[start] > cluster_tol:
+                clusters.append((start, k))
+                start = k
+        clusters.append((start, n_total))
+
+        def clean(symbol):
+            return symbol.replace("_", "")
+
+        print("Lowest RHF singlet (RHF->RHF) stability eigenvalues:")
+        print(f"  {'eigenvalue':>12s}  {'deg':>3s}  dominant (occ,virt) blocks (fraction of character)")
+        shown = 0
+        for lo, hi in clusters:
+            if shown >= n:
+                break
+            avg_eig = np.mean(eigvals[lo:hi])
+            deg = hi - lo
+            sq = np.sum(eigvecs[:, lo:hi] ** 2, axis=1)
+            weights = {}
+            for ho in range(len(irrep_symbols)):
+                for hv in range(len(irrep_symbols)):
+                    mask = (result.occ_irrep_of == ho) & (result.virt_irrep_of == hv)
+                    if not mask.any():
+                        continue
+                    # Normalize by deg -- fraction of character (0..1),
+                    # independent of how many roots are in this cluster,
+                    # rather than a raw sum that grows with deg.
+                    w = float(np.sum(sq[mask])) / deg
+                    if w > 0.02:
+                        weights[(ho, hv)] = w
+            dominant = sorted(weights.items(), key=lambda kv: -kv[1])[:3]
+            label = ", ".join(f"{clean(irrep_symbols[ho])}x{clean(irrep_symbols[hv])}={w:.2f}" for (ho, hv), w in dominant)
+            print(f"  {avg_eig:>12.6f}  {deg:>3d}  {label}")
+            shown += 1
+
+        lowest = eigvals[0]
+        if lowest < neg_threshold:
+            print(f"RHF determinant is UNSTABLE: lowest eigenvalue {lowest:.6f} < {neg_threshold}")
+        else:
+            print(f"RHF determinant is stable: lowest eigenvalue {lowest:.6f}")
 
     def create_slices(self, slice_args, Orbs):
         #for now, Orbs only supports ndocc_irrep objects
