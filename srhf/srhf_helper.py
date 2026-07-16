@@ -515,12 +515,20 @@ class SOrbitals():
                 # virtual -- the same "partial occupation of a
                 # degenerate orbital" problem as the overshoot case
                 # below, just not caught by the cumulative-weight check
-                # alone. Two adjacent slots belong to the same group iff
-                # they share an irrep and an (exactly, since these come
-                # from an SO-symmetric Hamiltonian) tied orbital energy.
-                if (i + 1 < len(self.sorted_evals)
-                        and self.sorted_irreps[i + 1] == self.sorted_irreps[i]
-                        and abs(self.sorted_evals[i + 1] - self.sorted_evals[i]) < 1e-8):
+                # alone. Two adjacent slots are FORCED to be in the same
+                # group only when they share a genuinely multi-
+                # dimensional irrep (self.symtext.irreps[h].d > 1) AND
+                # have a tied orbital energy -- a tied energy within a
+                # 1D irrep (always true for every orbital in C1, whose
+                # only irrep is the 1D "A") is just an accidental near-
+                # degeneracy (e.g. a fullerene cage's HOMO/LUMO gap,
+                # inherited from the true higher-symmetry geometry even
+                # when computed with subgroup="C1"), not a symmetry
+                # requirement -- occupying only one of a tied PAIR is
+                # perfectly fine there.
+                same_irrep = self.sorted_irreps[i + 1] == self.sorted_irreps[i] if i + 1 < len(self.sorted_evals) else False
+                genuinely_degenerate = same_irrep and self.symtext.irreps[self.sorted_irreps[i]].d > 1
+                if genuinely_degenerate and abs(self.sorted_evals[i + 1] - self.sorted_evals[i]) < 1e-8:
                     self._raise_or_warn_split_degeneracy(i)
                 return i
             elif docc > self.ndocc:
