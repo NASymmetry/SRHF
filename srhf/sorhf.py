@@ -195,6 +195,25 @@ class SO_RHF():
                 Fs = so_orbitals.A.transpose().dot(F.dot(so_orbitals.A))
                 eps, Cs = Fs.eigh()
                 C = so_orbitals.A.dot(Cs)
+                # Re-run aufbau against THIS iteration's orbital energies,
+                # not just once from the initial guess. The initial guess
+                # (SAD or otherwise) only has to get each irrep's own
+                # internal ordering right; getting the ordering RIGHT
+                # ACROSS irreps too is a much higher bar, and a cheap
+                # guess can easily miss it -- confirmed concretely for
+                # benzene/6-31G/D6h, where the SAD-guess ordering wrongly
+                # left E_1g's lowest orbital (-0.174 Ha) unoccupied while
+                # occupying E_2g's 4th orbital (+0.038 Ha), converging
+                # self-consistently to a valid but non-ground-state
+                # solution 3+ Hartree above the correct (and C1-matching)
+                # answer. Skipped when the user supplied an explicit
+                # Options(docc=[...]) vector -- that's the documented
+                # escape hatch for genuinely open-shell/fractional-
+                # occupation systems (build_D honors it directly), and
+                # re-deriving occupation from aufbau here would silently
+                # overrule it every iteration.
+                if self.options.docc is None:
+                    so_orbitals.ndocc_irrep(C, eps)
                 so_orbitals.C = C
                 D_new, docc_vector = self.build_D(so_orbitals)
                 D_i = D_new
