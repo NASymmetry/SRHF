@@ -506,14 +506,56 @@ class SOrbitals():
         for i, ir_docc in enumerate(self.sorted_eval_degen):
             docc += ir_docc
             if docc == self.ndocc:
+                # Landing exactly on ndocc doesn't guarantee a clean cut:
+                # with exploit_degen=False, each partner of a degenerate
+                # irrep is its own weight-1 slot (rather than one
+                # weight-degen slot), so the cumulative sum can land
+                # exactly on ndocc while still splitting an exactly-
+                # degenerate group's partners between occupied and
+                # virtual -- the same "partial occupation of a
+                # degenerate orbital" problem as the overshoot case
+                # below, just not caught by the cumulative-weight check
+                # alone. Two adjacent slots belong to the same group iff
+                # they share an irrep and an (exactly, since these come
+                # from an SO-symmetric Hamiltonian) tied orbital energy.
+                if (i + 1 < len(self.sorted_evals)
+                        and self.sorted_irreps[i + 1] == self.sorted_irreps[i]
+                        and abs(self.sorted_evals[i + 1] - self.sorted_evals[i]) < 1e-8):
+                    self._raise_or_warn_split_degeneracy(i)
                 return i
             elif docc > self.ndocc:
-                if type(self.options.docc) is None:
-                    raise ValueError('This likely means a degenerate orbital is partially occupied')
-                else:
-                    warnings.warn("The initial guess has partially occupied a degenerate orbital. The user-input occupation vector {DOCC} will be used... you have been warned.")
-                    #raise Warning("The initial guess has partially occupied a degenerate orbital. The user-input occupation vector {DOCC} will be used... you have been warned.")
-                    return i
+                self._raise_or_warn_split_degeneracy(i)
+                return i
+
+    def _raise_or_warn_split_degeneracy(self, i):
+        """Called when the aufbau cut falls inside a group of degenerate
+        partner orbitals -- ndocc electrons cannot be assigned to whole
+        irreps of this point group without either breaking symmetry
+        (occupying some but not all partners) or occupying one whole
+        extra group (too many electrons). This is a real, not merely
+        numerical, ambiguity: see SO_RHF's docs for the cubane/Oh example
+        that surfaced it. self.options.docc (one entry per irrep) is the
+        escape hatch for genuinely open-shell/fractional-occupation
+        systems -- if supplied, build_D (srhf/rhf.py, srhf/sorhf.py) uses
+        it directly instead of this aufbau count."""
+        irrep_symbol = self.symtext.irreps[self.sorted_irreps[i]].symbol
+        if self.options.docc is None:
+            raise ValueError(
+                f"Cannot close-shell-fill {self.ndocc} doubly-occupied orbitals in "
+                f"point group {self.symtext.pg}: the aufbau boundary falls inside "
+                f"degenerate irrep {irrep_symbol}, which can only be occupied as a "
+                f"whole group -- occupying only some of its partners would break "
+                f"point-group symmetry, and occupying all of them gives too many "
+                f"electrons. Supply an explicit occupation vector via "
+                f"Options(docc=[...]) (one entry per irrep, in irrep order) to "
+                f"proceed, or rerun in a lower-symmetry subgroup= where this "
+                f"irrep splits into non-degenerate pieces."
+            )
+        warnings.warn(
+            f"The aufbau guess would partially occupy degenerate irrep "
+            f"{irrep_symbol}; proceeding with the user-supplied occupation "
+            f"vector Options(docc=...) instead."
+        )
 
     def process_salcs(self):
         #TEMP self.partner_functions()
