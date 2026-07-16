@@ -513,27 +513,95 @@ class SO_RHF():
 
         return Biajb_dense, active_by_irrep, gn_flat, np.array(occ_num), np.array(comb_occ), np.array(comb_virt), MO_dense, I_dense
 
+    def _gather_stability_pairs(self, tiled, so):
+        """
+        Shared index-gathering for rhf_stability_analysis (singlet) and
+        uhf_stability_analysis (triplet): every occupied x virtual orbital
+        pair (every irrep combination, every degenerate-irrep partner
+        independent -- NOT restricted to same-irrep "active" pairs, and
+        NOT pooled across partners, unlike _build_soscf_hessian's Newton-
+        step Hessian). Restricting to same-irrep pairs would silently hide
+        a direction with zero gradient (by symmetry) but negative
+        curvature -- a point-group instability. Pooling degenerate-irrep
+        partners would make it structurally impossible to detect a
+        distortion that breaks a partner's own degeneracy (a
+        Jahn-Teller-type instability) -- so this always explores every
+        partner independently.
+
+        occ_num: occ-only numbering, matching MO_tiled's axis 0 (built
+        from occ_C_tiled). comb_occ/comb_virt: full combined-space
+        numbering, matching MO_tiled's other 3 axes (built from C_tiled)
+        and moF_tiled (both axes) -- same two-numbering-system distinction
+        _build_soscf_hessian already draws for its own occ_num vs
+        comb_occ/comb_virt, just without the same-irrep restriction and
+        without pooling.
+
+        fock_term/ij_ab/ib_ja are shared verbatim between the singlet and
+        triplet stability formulas; the (ia|jb) Coulomb term is singlet-
+        only (triplet/spin-flip excitations have no same-spin Coulomb
+        ladder contribution) and is left to rhf_stability_analysis to
+        gather itself from the returned i_num_arr/i_comb_arr/a_arr.
+
+        Returns (occ_irrep_of, virt_irrep_of, i_num_arr, i_comb_arr, a_arr,
+        fock_term, ij_ab, ib_ja); all eight are empty arrays when there are
+        no active occupied-virtual pairs to test.
+        """
+        occ_num, comb_occ, comb_virt, occ_irrep, virt_irrep = [], [], [], [], []
+        for h in tiled.populated:
+            degen_h = so.symtext.irreps[h].d if self.options.exploit_degen else 1
+            ndocc_h, nvirt_h = so.Orbs[h].ndocc_ir, so.Orbs[h].nvirt_ir
+            il_h = tiled.irreplength[h]
+            for mu in range(degen_h):
+                base = tiled.tile_start[h] + mu * il_h
+                occ_base = tiled.occ_tile_start[h][mu]
+                for i_local in range(ndocc_h):
+                    occ_num.append(occ_base + i_local)
+                    comb_occ.append(base + i_local)
+                    occ_irrep.append(h)
+                for a_local in range(nvirt_h):
+                    comb_virt.append(base + ndocc_h + a_local)
+                    virt_irrep.append(h)
+
+        empty = np.array([])
+        if not occ_num or not comb_virt:
+            return empty, empty, empty, empty, empty, empty, empty, empty
+
+        occ_num = np.array(occ_num)
+        comb_occ = np.array(comb_occ)
+        comb_virt = np.array(comb_virt)
+        occ_irrep = np.array(occ_irrep)
+        virt_irrep = np.array(virt_irrep)
+
+        n_occ_full, n_virt_full = len(occ_num), len(comb_virt)
+        i_num_arr = np.repeat(occ_num, n_virt_full)     # for MO_tiled's occ-only axis
+        i_comb_arr = np.repeat(comb_occ, n_virt_full)   # for MO_tiled's other axes / moF_tiled
+        a_arr = np.tile(comb_virt, n_occ_full)
+        occ_irrep_of = np.repeat(occ_irrep, n_virt_full)
+        virt_irrep_of = np.tile(virt_irrep, n_occ_full)
+
+        MO_tiled = tiled.MO_tiled
+        moF_tiled = tiled.moF_tiled
+
+        delta_occ = i_comb_arr[:, None] == i_comb_arr[None, :]
+        delta_virt = a_arr[:, None] == a_arr[None, :]
+        F_vv = moF_tiled[np.ix_(a_arr, a_arr)]
+        F_oo = moF_tiled[np.ix_(i_comb_arr, i_comb_arr)]
+        fock_term = np.where(delta_occ, F_vv, 0.0) - np.where(delta_virt, F_oo, 0.0)
+
+        ij_ab = MO_tiled[i_num_arr[:, None], i_comb_arr[None, :], a_arr[:, None], a_arr[None, :]]
+        ib_ja = MO_tiled[i_num_arr[:, None], a_arr[None, :], i_comb_arr[None, :], a_arr[:, None]]
+
+        return occ_irrep_of, virt_irrep_of, i_num_arr, i_comb_arr, a_arr, fock_term, ij_ab, ib_ja
+
     def rhf_stability_analysis(self):
         """
         Real, singlet RHF->RHF wavefunction stability analysis: diagonalize
         the full (1A+1B) orbital-rotation Hessian over EVERY occupied x
-        virtual orbital pair (every irrep combination, every degenerate-
-        irrep partner independent -- NOT restricted to same-irrep "active"
-        pairs, and NOT pooled across partners, unlike _build_soscf_hessian's
-        Newton-step Hessian). A negative eigenvalue means there is an
+        virtual orbital pair (see _gather_stability_pairs's docstring for
+        why every irrep combination and every degenerate-irrep partner is
+        explored independently). A negative eigenvalue means there is an
         occupied-virtual rotation that lowers the energy -- the wavefunction
         is a saddle point, not a true minimum, in the tested space.
-
-        Restricting to same-irrep pairs (as the Newton step correctly does,
-        since only those have nonzero GRADIENT) would silently hide exactly
-        the interesting case: a direction with zero gradient (by symmetry)
-        but negative curvature -- a point-group instability. Pooling
-        degenerate-irrep partners (as the Newton step also correctly does,
-        since its rotation parameter really is one shared kappa applied
-        identically to every partner) would make it structurally impossible
-        to detect a distortion that breaks a partner's own degeneracy (a
-        Jahn-Teller-type instability) -- so this method always explores
-        every partner independently.
 
         Formula is the standard real singlet (1A+1B) TDHF/RPA stability
         matrix:
@@ -563,59 +631,15 @@ class SO_RHF():
         moF = self.F.einsum('ui,vj,uv', self.C, self.C, self.F)
         tiled = self._build_tiled_mo_data(self.bigERI, occ_C, self.C, moF, so)
 
-        # occ_num: occ-only numbering, matching MO_tiled's axis 0 (built
-        # from occ_C_tiled). comb_occ/comb_virt: full combined-space
-        # numbering, matching MO_tiled's other 3 axes (built from
-        # C_tiled) and moF_tiled (both axes) -- same two-numbering-system
-        # distinction _build_soscf_hessian already draws for its own
-        # occ_num vs comb_occ/comb_virt, just without the same-irrep
-        # restriction and without pooling.
-        occ_num, comb_occ, comb_virt, occ_irrep, virt_irrep = [], [], [], [], []
-        for h in tiled.populated:
-            degen_h = so.symtext.irreps[h].d if self.options.exploit_degen else 1
-            ndocc_h, nvirt_h = so.Orbs[h].ndocc_ir, so.Orbs[h].nvirt_ir
-            il_h = tiled.irreplength[h]
-            for mu in range(degen_h):
-                base = tiled.tile_start[h] + mu * il_h
-                occ_base = tiled.occ_tile_start[h][mu]
-                for i_local in range(ndocc_h):
-                    occ_num.append(occ_base + i_local)
-                    comb_occ.append(base + i_local)
-                    occ_irrep.append(h)
-                for a_local in range(nvirt_h):
-                    comb_virt.append(base + ndocc_h + a_local)
-                    virt_irrep.append(h)
+        occ_irrep_of, virt_irrep_of, i_num_arr, i_comb_arr, a_arr, fock_term, ij_ab, ib_ja = \
+            self._gather_stability_pairs(tiled, so)
 
-        if not occ_num or not comb_virt:
+        if occ_irrep_of.size == 0:
             empty = np.array([])
             return RHFStabilityResult(eigenvalues=empty, eigenvectors=empty,
                                        occ_irrep_of=empty, virt_irrep_of=empty)
 
-        occ_num = np.array(occ_num)
-        comb_occ = np.array(comb_occ)
-        comb_virt = np.array(comb_virt)
-        occ_irrep = np.array(occ_irrep)
-        virt_irrep = np.array(virt_irrep)
-
-        n_occ_full, n_virt_full = len(occ_num), len(comb_virt)
-        i_num_arr = np.repeat(occ_num, n_virt_full)     # for MO_tiled's occ-only axis
-        i_comb_arr = np.repeat(comb_occ, n_virt_full)   # for MO_tiled's other axes / moF_tiled
-        a_arr = np.tile(comb_virt, n_occ_full)
-        occ_irrep_of = np.repeat(occ_irrep, n_virt_full)
-        virt_irrep_of = np.tile(virt_irrep, n_occ_full)
-
-        MO_tiled = tiled.MO_tiled
-        moF_tiled = tiled.moF_tiled
-
-        delta_occ = i_comb_arr[:, None] == i_comb_arr[None, :]
-        delta_virt = a_arr[:, None] == a_arr[None, :]
-        F_vv = moF_tiled[np.ix_(a_arr, a_arr)]
-        F_oo = moF_tiled[np.ix_(i_comb_arr, i_comb_arr)]
-        fock_term = np.where(delta_occ, F_vv, 0.0) - np.where(delta_virt, F_oo, 0.0)
-
-        ia_jb = MO_tiled[i_num_arr[:, None], a_arr[:, None], i_comb_arr[None, :], a_arr[None, :]]
-        ij_ab = MO_tiled[i_num_arr[:, None], i_comb_arr[None, :], a_arr[:, None], a_arr[None, :]]
-        ib_ja = MO_tiled[i_num_arr[:, None], a_arr[None, :], i_comb_arr[None, :], a_arr[:, None]]
+        ia_jb = tiled.MO_tiled[i_num_arr[:, None], a_arr[:, None], i_comb_arr[None, :], a_arr[None, :]]
 
         H_iajb = fock_term + 4.0 * ia_jb - ib_ja - ij_ab
         eigvals, eigvecs = np.linalg.eigh(H_iajb)
@@ -623,10 +647,68 @@ class SO_RHF():
         return RHFStabilityResult(eigenvalues=eigvals, eigenvectors=eigvecs,
                                    occ_irrep_of=occ_irrep_of, virt_irrep_of=virt_irrep_of)
 
-    def report_rhf_stability(self, result, n=10, neg_threshold=-1e-6, cluster_tol=1e-6):
+    def uhf_stability_analysis(self):
         """
-        Print a Psi4-style stability report ("Lowest singlet (RHF->RHF)
-        stability eigenvalues:") for a result from rhf_stability_analysis().
+        Real, triplet RHF->UHF wavefunction stability analysis: diagonalize
+        the full (3A+3B) orbital-rotation Hessian over the same tiled,
+        un-pooled occupied x virtual space as rhf_stability_analysis (see
+        _gather_stability_pairs's docstring). A negative eigenvalue means
+        allowing the alpha and beta orbitals to split (breaking spin
+        symmetry) lowers the energy -- an unrestricted, UHF-type solution
+        exists below this RHF one.
+
+        Formula is the standard real triplet (3A+3B) TDHF/RPA stability
+        matrix:
+            H_iajb = delta_ij F_ab - delta_ab F_ij - (ij|ab) - (ib|ja)
+        i.e. rhf_stability_analysis's H_iajb with the 4(ia|jb) Coulomb term
+        dropped entirely -- triplet/spin-flip excitations have no same-spin
+        Coulomb ladder contribution. Validated three independent ways: (1)
+        finite difference of a from-scratch UHF energy functional
+        (kappa_alpha=+t*v, kappa_beta=-t*v for a single occ-virt pair)
+        against this formula's diagonal entries, (2) the same finite-
+        difference technique with two simultaneously-perturbed pairs
+        against off-diagonal entries, and (3) the full eigenvalue spectrum
+        against Psi4's own stability_analysis='check' "Lowest triplet
+        (RHF->UHF) stability eigenvalues:" output (water/STO-3G, no
+        truncation; ammonia/STO-3G, genuinely degenerate E irrep, both
+        exploit_degen settings) -- exact match to 5-6 decimal places in
+        every case (see test/test_rhf_stability.py). Note: the raw
+        orbital-rotation Hessian (what a naive finite difference computes
+        directly, matching _build_soscf_hessian's Biajb_dense) is 4x this
+        H_iajb -- the "stability eigenvalue" convention (matching Psi4's
+        own reported numbers, both singlet and triplet) carries no outer
+        factor of 4.
+
+        Must be called after run() has converged, same as
+        rhf_stability_analysis.
+        """
+        if not hasattr(self, "wfn_energy"):
+            raise RuntimeError("uhf_stability_analysis() requires a converged run() first")
+
+        so = self.so_orbitals
+        occ_C = self.C.slicev2([":", ":ndocc_ir"], so.Orbs)
+        moF = self.F.einsum('ui,vj,uv', self.C, self.C, self.F)
+        tiled = self._build_tiled_mo_data(self.bigERI, occ_C, self.C, moF, so)
+
+        occ_irrep_of, virt_irrep_of, _, _, _, fock_term, ij_ab, ib_ja = \
+            self._gather_stability_pairs(tiled, so)
+
+        if occ_irrep_of.size == 0:
+            empty = np.array([])
+            return RHFStabilityResult(eigenvalues=empty, eigenvectors=empty,
+                                       occ_irrep_of=empty, virt_irrep_of=empty)
+
+        H_iajb = fock_term - ij_ab - ib_ja
+        eigvals, eigvecs = np.linalg.eigh(H_iajb)
+
+        return RHFStabilityResult(eigenvalues=eigvals, eigenvectors=eigvecs,
+                                   occ_irrep_of=occ_irrep_of, virt_irrep_of=virt_irrep_of)
+
+    def _report_stability(self, result, title, verdict_unstable, verdict_stable,
+                           n=10, neg_threshold=-1e-6, cluster_tol=1e-6):
+        """
+        Shared clustering/formatting body for report_rhf_stability (singlet)
+        and report_uhf_stability (triplet).
 
         The "(occ irrep, virt irrep) block weight" column is a cheap,
         HONEST diagnostic, not a rigorous irreducible-representation label:
@@ -662,7 +744,7 @@ class SO_RHF():
         def clean(symbol):
             return symbol.replace("_", "")
 
-        print("Lowest RHF singlet (RHF->RHF) stability eigenvalues:")
+        print(title)
         print(f"  {'eigenvalue':>12s}  {'deg':>3s}  dominant (occ,virt) blocks (fraction of character)")
         shown = 0
         for lo, hi in clusters:
@@ -690,9 +772,35 @@ class SO_RHF():
 
         lowest = eigvals[0]
         if lowest < neg_threshold:
-            print(f"RHF determinant is UNSTABLE: lowest eigenvalue {lowest:.6f} < {neg_threshold}")
+            print(f"{verdict_unstable} lowest eigenvalue {lowest:.6f} < {neg_threshold}")
         else:
-            print(f"RHF determinant is stable: lowest eigenvalue {lowest:.6f}")
+            print(f"{verdict_stable} lowest eigenvalue {lowest:.6f}")
+
+    def report_rhf_stability(self, result, n=10, neg_threshold=-1e-6, cluster_tol=1e-6):
+        """Print a Psi4-style stability report ("Lowest singlet (RHF->RHF)
+        stability eigenvalues:") for a result from rhf_stability_analysis().
+        See _report_stability's docstring for the block-weight diagnostic's
+        meaning and limitations."""
+        self._report_stability(
+            result,
+            title="Lowest RHF singlet (RHF->RHF) stability eigenvalues:",
+            verdict_unstable="RHF determinant is UNSTABLE:",
+            verdict_stable="RHF determinant is stable:",
+            n=n, neg_threshold=neg_threshold, cluster_tol=cluster_tol,
+        )
+
+    def report_uhf_stability(self, result, n=10, neg_threshold=-1e-6, cluster_tol=1e-6):
+        """Print a Psi4-style stability report ("Lowest triplet (RHF->UHF)
+        stability eigenvalues:") for a result from uhf_stability_analysis().
+        See _report_stability's docstring for the block-weight diagnostic's
+        meaning and limitations."""
+        self._report_stability(
+            result,
+            title="Lowest triplet (RHF->UHF) stability eigenvalues:",
+            verdict_unstable="RHF determinant is UNSTABLE to spin-symmetry breaking (RHF->UHF):",
+            verdict_stable="RHF determinant is stable to spin-symmetry breaking (RHF->UHF):",
+            n=n, neg_threshold=neg_threshold, cluster_tol=cluster_tol,
+        )
 
     def create_slices(self, slice_args, Orbs):
         #for now, Orbs only supports ndocc_irrep objects

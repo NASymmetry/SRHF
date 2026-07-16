@@ -1,14 +1,20 @@
 """
-Tests for SO_RHF.rhf_stability_analysis() (srhf/sorhf.py) -- real singlet
-RHF->RHF wavefunction stability analysis.
+Tests for SO_RHF.rhf_stability_analysis() and uhf_stability_analysis()
+(srhf/sorhf.py) -- real singlet RHF->RHF and real triplet RHF->UHF
+wavefunction stability analysis.
 
-The formula (the standard 1(A+B) TDHF/RPA matrix) is the same one already
-used for the Newton-Raphson step's Hessian in _build_soscf_hessian, just
-evaluated over EVERY occupied x virtual orbital pair (not just same-irrep
-"active" pairs) with every degenerate-irrep partner independent (no
-pooling) -- see rhf_stability_analysis's docstring for the full rationale.
-Validated by direct comparison against Psi4's own stability_analysis='check'
-output: exact match to 5-6 decimal places for every molecule tested here.
+The singlet formula (the standard 1(A+B) TDHF/RPA matrix) is the same one
+already used for the Newton-Raphson step's Hessian in
+_build_soscf_hessian, just evaluated over EVERY occupied x virtual orbital
+pair (not just same-irrep "active" pairs) with every degenerate-irrep
+partner independent (no pooling) -- see rhf_stability_analysis's docstring
+for the full rationale. The triplet formula is the same construction with
+the 4(ia|jb) Coulomb term dropped (see uhf_stability_analysis's docstring
+-- also the source of a subtle x4 normalization gotcha between the raw
+orbital-rotation Hessian and the "stability eigenvalue" convention, worth
+reading if re-deriving either formula from scratch). Both validated by
+direct comparison against Psi4's own stability_analysis='check' output:
+exact match to 5-6 decimal places for every molecule tested here.
 
 Note: Psi4 only supports the 8 abelian point groups internally, so for
 ammonia (true C3v) and methane (true Td) it silently runs in a lower
@@ -175,6 +181,104 @@ def test_report_rhf_stability_runs(capsys):
 
 
 # ---------------------------------------------------------------------------
+# Real triplet RHF->UHF stability
+# ---------------------------------------------------------------------------
+#
+# Same formula family as the singlet case above (1(A+B) with the 4(ia|jb)
+# term dropped -- see uhf_stability_analysis's docstring), same tiled/
+# un-pooled index space (_gather_stability_pairs is shared verbatim between
+# the two), so the same validation strategy applies directly: live-parse
+# Psi4's "Lowest triplet (RHF->UHF) stability eigenvalues:" block, gate on
+# energy match, check the global minimum, subset-match the rest.
+
+
+def _psi4_triplet_stability_eigenvalues(mol_str, basis):
+    """Same as _psi4_stability_eigenvalues but for the triplet block."""
+    fd, out_path = tempfile.mkstemp(suffix=".out")
+    os.close(fd)
+    try:
+        psi4.core.clean()
+        psi4.core.clean_options()
+        psi4.core.set_output_file(out_path, False)
+        psi4.set_options({"basis": basis, "scf_type": "pk", "stability_analysis": "check",
+                           "e_convergence": 1e-10, "d_convergence": 1e-10})
+        psi4.geometry(mol_str)
+        ref_scf = psi4.energy("scf")
+        with open(out_path) as f:
+            text = f.read()
+        match = re.search(r"Lowest triplet \(RHF->UHF\) stability eigenvalues:\n(.*?)\n\s*\n", text, re.DOTALL)
+        assert match, "could not find Psi4 triplet stability eigenvalues block in output"
+        eigenvalues = [float(x) for x in re.findall(r"[-+]?\d+\.\d+", match.group(1))]
+        assert eigenvalues, "found the triplet stability block but parsed no eigenvalues out of it"
+        return ref_scf, eigenvalues
+    finally:
+        os.remove(out_path)
+
+
+@pytest.fixture(scope="module", params=list(CASES), ids=list(CASES))
+def psi4_triplet_reference(request):
+    mol_str, basis = CASES[request.param]
+    ref_scf, eigenvalues = _psi4_triplet_stability_eigenvalues(mol_str, basis)
+    return request.param, mol_str, basis, ref_scf, eigenvalues
+
+
+@pytest.mark.parametrize("exploit_degen", [False, True])
+def test_uhf_stability_matches_psi4(psi4_triplet_reference, exploit_degen):
+    name, mol_str, basis, ref_scf, psi4_eigenvalues = psi4_triplet_reference
+
+    opts = Options(subgroup=False, exploit_degen=exploit_degen, guess="sad",
+                    scf_max_iter=50, e_convergence=1e-11, d_convergence=1e-11,
+                    diis=True, second_order=True)
+    job = SO_RHF(mol_str, basis, opts)
+    job.run()
+
+    assert abs(job.wfn_energy - ref_scf) < 1e-8, (
+        f"{name} (exploit_degen={exploit_degen}) SCF energy mismatch: "
+        f"{job.wfn_energy} vs psi4 {ref_scf}"
+    )
+
+    result = job.uhf_stability_analysis()
+    our_eigenvalues = sorted(result.eigenvalues.tolist())
+    assert our_eigenvalues, f"{name}: no active occupied-virtual rotations to test"
+
+    assert np.isclose(our_eigenvalues[0], min(psi4_eigenvalues), atol=1e-4), (
+        f"{name} (exploit_degen={exploit_degen}): lowest triplet eigenvalue mismatch -- "
+        f"ours={our_eigenvalues[0]} psi4_min={min(psi4_eigenvalues)}"
+    )
+
+    remaining = list(our_eigenvalues)
+    for psi4_val in psi4_eigenvalues:
+        closest_idx = min(range(len(remaining)), key=lambda i: abs(remaining[i] - psi4_val))
+        assert abs(remaining[closest_idx] - psi4_val) < 1e-4, (
+            f"{name} (exploit_degen={exploit_degen}): psi4 triplet eigenvalue {psi4_val} "
+            f"has no match in our spectrum {our_eigenvalues}"
+        )
+        remaining.pop(closest_idx)
+
+
+def test_uhf_stability_requires_converged_run():
+    opts = Options(subgroup=False, exploit_degen=False, guess="sad",
+                    scf_max_iter=50, e_convergence=1e-11, d_convergence=1e-11,
+                    diis=True, second_order=True)
+    job = SO_RHF(WATER, "sto-3g", opts)
+    with pytest.raises(RuntimeError):
+        job.uhf_stability_analysis()
+
+
+def test_report_uhf_stability_runs(capsys):
+    opts = Options(subgroup=False, exploit_degen=False, guess="sad",
+                    scf_max_iter=50, e_convergence=1e-11, d_convergence=1e-11,
+                    diis=True, second_order=True)
+    job = SO_RHF(WATER, "sto-3g", opts)
+    job.run()
+    result = job.uhf_stability_analysis()
+    job.report_uhf_stability(result)
+    out = capsys.readouterr().out
+    assert "stability eigenvalues" in out
+    assert "stable" in out.lower()
+
+
+# ---------------------------------------------------------------------------
 # Per-irrep label validation, using subgroup= to match Psi4's own (abelian)
 # point group exactly
 # ---------------------------------------------------------------------------
@@ -335,6 +439,75 @@ def test_rhf_stability_labels_match_psi4_degeneracy_structure(name):
         )
         assert len(remaining[idx]) >= len(psi4_group), (
             f"{name}: degeneracy mismatch at eigenvalue ~{np.mean(psi4_group):.6f} -- "
+            f"psi4 has {len(psi4_group)} distinct-label roots, ours only has {len(remaining[idx])}"
+        )
+        remaining.pop(idx)
+
+
+def _psi4_triplet_stability_labeled(mol_str, basis):
+    """Same as _psi4_stability_labeled but for the triplet block."""
+    fd, out_path = tempfile.mkstemp(suffix=".out")
+    os.close(fd)
+    try:
+        psi4.core.clean()
+        psi4.core.clean_options()
+        psi4.core.set_output_file(out_path, False)
+        psi4.set_options({"basis": basis, "scf_type": "pk", "stability_analysis": "check",
+                           "e_convergence": 1e-10, "d_convergence": 1e-10})
+        psi4.geometry(mol_str)
+        ref_scf = psi4.energy("scf")
+        with open(out_path) as f:
+            text = f.read()
+        match = re.search(r"Lowest triplet \(RHF->UHF\) stability eigenvalues:\n(.*?)\n\s*\n", text, re.DOTALL)
+        assert match, "could not find Psi4 triplet stability eigenvalues block in output"
+        pairs = re.findall(r"([A-Za-z][\w']*)\s+([-+]?\d+\.\d+)", match.group(1))
+        assert pairs
+        return ref_scf, [(label, float(val)) for label, val in pairs]
+    finally:
+        os.remove(out_path)
+
+
+@pytest.mark.parametrize("name", list(ABELIAN_SUBGROUP_CASES))
+def test_uhf_stability_labels_match_psi4_degeneracy_structure(name):
+    """Same technique as test_rhf_stability_labels_match_psi4_degeneracy_structure,
+    just for the triplet (RHF->UHF) block -- _labeled_eigenvalues is generic
+    over which stability_analysis result it's given (rhf_ or uhf_), so it's
+    reused verbatim here."""
+    mol_str, basis, subgroup = ABELIAN_SUBGROUP_CASES[name]
+
+    psi4_ref_scf, psi4_labeled = _psi4_triplet_stability_labeled(mol_str, basis)
+
+    opts = Options(subgroup=subgroup, exploit_degen=False, guess="sad",
+                    scf_max_iter=50, e_convergence=1e-11, d_convergence=1e-11,
+                    diis=True, second_order=True)
+    job = SO_RHF(mol_str, basis, opts)
+    job.run()
+    assert abs(job.wfn_energy - psi4_ref_scf) < 1e-8
+
+    result = job.uhf_stability_analysis()
+    our_labeled = _labeled_eigenvalues(job, result)
+
+    def cluster_by_value(labeled_list):
+        vals = sorted(v for _, v in labeled_list)
+        groups, start = [], 0
+        for k in range(1, len(vals)):
+            if vals[k] - vals[start] > 1e-4:
+                groups.append(vals[start:k])
+                start = k
+        groups.append(vals[start:])
+        return groups
+
+    psi4_groups = cluster_by_value(psi4_labeled)
+    our_groups = cluster_by_value(our_labeled)
+
+    remaining = list(our_groups)
+    for psi4_group in psi4_groups:
+        idx = min(range(len(remaining)), key=lambda i: abs(np.mean(remaining[i]) - np.mean(psi4_group)))
+        assert abs(np.mean(remaining[idx]) - np.mean(psi4_group)) < 1e-4, (
+            f"{name}: no matching triplet eigenvalue cluster for psi4 cluster {psi4_group}"
+        )
+        assert len(remaining[idx]) >= len(psi4_group), (
+            f"{name}: triplet degeneracy mismatch at eigenvalue ~{np.mean(psi4_group):.6f} -- "
             f"psi4 has {len(psi4_group)} distinct-label roots, ours only has {len(remaining[idx])}"
         )
         remaining.pop(idx)
